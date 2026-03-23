@@ -1,4 +1,24 @@
 services:
+  opencode-server:
+    image: ghcr.io/anomalyco/opencode
+    container_name: opencode-server
+    restart: unless-stopped
+    networks:
+      - opencode
+    ports:
+      - "4096:4096"
+    working_dir: /opencode
+    command:
+      - serve
+      - --hostname
+      - 0.0.0.0
+      - --port
+      - "4096"
+      - --cors
+      - http://opencode-server:4096
+      - --cors
+      - https://opencode.dev1.yl.c8g.top
+
   opencode-connect:
     image: opencode-connect:local
     build:
@@ -6,11 +26,21 @@ services:
       dockerfile: Containerfile
     container_name: opencode-connect
     restart: unless-stopped
-    network_mode: host
+    depends_on:
+      - opencode-server
+    networks:
+      - opencode
+    ports:
+      - "8192:8192"
+      - "8193:8193"
     volumes:
       - ./configs/config.container.yaml:/app/configs/config.yaml:ro
     environment:
-      OPENCODE_CONNECT_OPENCODE_BASEURL: "http://127.0.0.1:4096"
+      OPENCODE_CONNECT_OPENCODE_BASEURL: "http://opencode-server:4096"
     command:
       - -c
       - /app/configs/config.yaml
+
+networks:
+  opencode:
+    driver: bridge
