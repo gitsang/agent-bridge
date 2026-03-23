@@ -8,6 +8,9 @@ services:
     ports:
       - "4096:4096"
     working_dir: /opencode
+    volumes:
+      - ./configs/opencode.json:/root/.config/opencode/opencode.json
+      - ./configs/auth.json:/root/.local/share/opencode/auth.json
     command:
       - serve
       - --hostname

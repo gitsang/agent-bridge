@@ -1,2 +1,5 @@
 config.*.yaml
 !config.example.yaml
+
+opencode.json
+auth.json
