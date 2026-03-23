@@ -14,7 +14,6 @@ import (
 	"github.com/gitsang/opencode-connect/internal/opencode"
 	"github.com/gitsang/opencode-connect/internal/plugin"
 	_ "github.com/gitsang/opencode-connect/internal/plugin/chatapi"
-	"github.com/gitsang/opencode-connect/internal/session"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -78,8 +77,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 		c.Opencode.BaseURL,
 		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
 	)
-	sessionStore := session.NewMemoryStore()
-	connector := connect.New(opencodeClient, sessionStore)
+	connector := connect.New(opencodeClient)
 
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

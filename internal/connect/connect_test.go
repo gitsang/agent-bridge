@@ -6,47 +6,40 @@ import (
 	"testing"
 
 	"github.com/gitsang/opencode-connect/internal/opencode"
-	"github.com/gitsang/opencode-connect/internal/session"
 )
 
-func TestHandleCreatesAndStoresSessionWhenMissing(t *testing.T) {
+func TestHandleUsesRequestSessionID(t *testing.T) {
 	t.Parallel()
 
-	store := session.NewMemoryStore()
 	client := &fakeSessionClient{
-		createSessionID: "session-created",
 		promptResult: &opencode.PromptResult{
 			Reply:             "hello",
-			OpencodeSessionID: "session-created",
+			OpencodeSessionID: "opencode-session-1",
 		},
 	}
 
-	connector := New(client, store)
+	connector := New(client)
 	resp, err := connector.Handle(context.Background(), &Message{
-		SessionID: "chat-1",
+		SessionID: "opencode-session-1",
 		Message:   "hello world",
 	})
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if resp.OpencodeSessionID != "session-created" {
-		t.Fatalf("Handle() session = %q, want %q", resp.OpencodeSessionID, "session-created")
+	if resp.SessionID != "opencode-session-1" {
+		t.Fatalf("Handle() session = %q, want %q", resp.SessionID, "opencode-session-1")
 	}
-	if client.createCalls != 1 {
-		t.Fatalf("CreateSession() calls = %d, want 1", client.createCalls)
+	if resp.Message != "hello" {
+		t.Fatalf("Handle() message = %q, want %q", resp.Message, "hello")
 	}
-	if client.promptSessionID != "session-created" {
-		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "session-created")
-	}
-	if stored, ok := store.Get("chat-1"); !ok || stored != "session-created" {
-		t.Fatalf("store.Get() = (%q, %t), want (%q, true)", stored, ok, "session-created")
+	if client.promptSessionID != "opencode-session-1" {
+		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "opencode-session-1")
 	}
 }
 
-func TestHandleUsesDirectiveSessionAndStoresBinding(t *testing.T) {
+func TestHandleUsesDirectiveSession(t *testing.T) {
 	t.Parallel()
 
-	store := session.NewMemoryStore()
 	client := &fakeSessionClient{
 		promptResult: &opencode.PromptResult{
 			Reply:             "hello",
@@ -54,16 +47,19 @@ func TestHandleUsesDirectiveSessionAndStoresBinding(t *testing.T) {
 		},
 	}
 
-	connector := New(client, store)
+	connector := New(client)
 	resp, err := connector.Handle(context.Background(), &Message{
-		SessionID: "chat-2",
+		SessionID: "ignored-by-directive",
 		Message:   "@session:existing-session\n\nhello world",
 	})
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if resp.OpencodeSessionID != "existing-session" {
-		t.Fatalf("Handle() session = %q, want %q", resp.OpencodeSessionID, "existing-session")
+	if resp.SessionID != "existing-session" {
+		t.Fatalf("Handle() session = %q, want %q", resp.SessionID, "existing-session")
+	}
+	if resp.Message != "hello" {
+		t.Fatalf("Handle() message = %q, want %q", resp.Message, "hello")
 	}
 	if client.getSessionID != "existing-session" {
 		t.Fatalf("GetSession() session = %q, want %q", client.getSessionID, "existing-session")
@@ -71,21 +67,15 @@ func TestHandleUsesDirectiveSessionAndStoresBinding(t *testing.T) {
 	if client.promptSessionID != "existing-session" {
 		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "existing-session")
 	}
-	if stored, ok := store.Get("chat-2"); !ok || stored != "existing-session" {
-		t.Fatalf("store.Get() = (%q, %t), want (%q, true)", stored, ok, "existing-session")
-	}
 }
 
 type fakeSessionClient struct {
-	createSessionID string
 	promptResult    *opencode.PromptResult
 	listSessions    []opencode.Session
 	getErr          error
-	createErr       error
 	promptErr       error
 	getSessionID    string
 	promptSessionID string
-	createCalls     int
 }
 
 func (f *fakeSessionClient) ListSessions(context.Context) ([]opencode.Session, error) {
@@ -98,18 +88,6 @@ func (f *fakeSessionClient) GetSession(_ context.Context, sessionID string) (*op
 		return nil, f.getErr
 	}
 	return &opencode.Session{ID: sessionID}, nil
-}
-
-func (f *fakeSessionClient) CreateSession(_ context.Context, sessionID string) (*opencode.Session, error) {
-	f.createCalls++
-	if f.createErr != nil {
-		return nil, f.createErr
-	}
-	createdID := f.createSessionID
-	if createdID == "" {
-		createdID = sessionID
-	}
-	return &opencode.Session{ID: createdID}, nil
 }
 
 func (f *fakeSessionClient) Prompt(_ context.Context, sessionID string, _ string) (*opencode.PromptResult, error) {

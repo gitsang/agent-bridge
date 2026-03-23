@@ -1,12 +1,10 @@
 package connect
 
 type Message struct {
-	Message           string `json:"message"`
-	SessionID         string `json:"session_id"`
-	Workdir           string `json:"workdir,omitempty"`
-	Command           string `json:"command,omitempty"`
-	Reply             string `json:"reply,omitempty"`
-	OpencodeSessionID string `json:"opencode_session_id,omitempty"`
+	Message   string `json:"message"`
+	SessionID string `json:"session_id"`
+	Workdir   string `json:"workdir,omitempty"`
+	Command   string `json:"command,omitempty"`
 }
 
 type Error struct {
