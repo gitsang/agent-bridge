@@ -148,71 +148,82 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		statusCode := http.StatusOK
+		logger := p.logger.With(
+			"method", r.Method,
+			"path", r.URL.Path,
+			"content_length", r.ContentLength,
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+			"x_forwarded_for", strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
+			"x_real_ip", strings.TrimSpace(r.Header.Get("X-Real-IP")),
+		)
+		defer func() {
+			logger.Info("ume webhook access",
+				"status_code", statusCode,
+				"duration_ms", time.Since(startedAt).Milliseconds(),
+				"access_token_present", strings.TrimSpace(r.URL.Query().Get("access_token")) != "",
+			)
+		}()
+
 		if r.Method != http.MethodPost {
+			statusCode = http.StatusMethodNotAllowed
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
 		}
 
 		token := strings.TrimSpace(r.URL.Query().Get("access_token"))
 		if token == "" {
+			statusCode = http.StatusBadRequest
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "access_token is required"})
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
-
-		var requests []umeWebhookRequest
-		if err := json.NewDecoder(r.Body).Decode(&requests); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		var request UmeWebhookRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			statusCode = http.StatusBadRequest
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 			return
 		}
-		if len(requests) == 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "request body is required"})
+		messageType := request.MsgType
+		if messageType != "" && messageType != "text" {
+			p.logger.Debug("ignore unsupported ume message type", "msg_type", messageType)
 			return
 		}
 
-		processed := 0
-		ignored := 0
-		for _, request := range requests {
-			messageType := request.MessageType()
-			if messageType != "" && messageType != "text" {
-				ignored++
-				p.logger.Debug("ignore unsupported ume message type", "msg_type", messageType)
-				continue
-			}
+		chatSessionID := request.SessionID.String()
+		if chatSessionID == "" {
+			statusCode = http.StatusBadRequest
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "sessionId is required"})
+			return
+		}
 
-			chatSessionID := request.SessionID.String()
-			if chatSessionID == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]any{"error": "sessionId is required"})
-				return
-			}
+		msgID := request.MsgID.String()
+		if p.markDuplicate(chatSessionID, msgID) {
+			p.logger.Debug("ignore duplicate ume message", "session_id", chatSessionID, "msg_id", msgID)
+			return
+		}
 
-			msgID := request.MsgID.String()
-			if p.markDuplicate(chatSessionID, msgID) {
-				ignored++
-				p.logger.Debug("ignore duplicate ume message", "session_id", chatSessionID, "msg_id", msgID)
-				continue
-			}
+		message := sanitizeMessage(request.Body)
+		if message == "" {
+			p.logger.Debug("ignore empty ume message after cleanup", "session_id", chatSessionID, "msg_id", msgID)
+			return
+		}
 
-			message := sanitizeMessage(request.MessageBody())
-			if message == "" {
-				ignored++
-				p.logger.Debug("ignore empty ume message after cleanup", "session_id", chatSessionID, "msg_id", msgID)
-				continue
-			}
-
+		go func() {
 			connectReq := connect.Message{
 				Message:   message,
 				SessionID: p.getOpencodeSessionID(chatSessionID),
 			}
-
-			resp, err := handle(r.Context(), &connectReq)
+			resp, err := handle(context.Background(), &connectReq)
 			if err != nil {
 				status := http.StatusBadGateway
 				var connectError *connect.Error
 				if errors.As(err, &connectError) {
 					status = connectError.StatusCode
 				}
+				statusCode = status
 				writeJSON(w, status, map[string]any{"error": err.Error()})
 				return
 			}
@@ -221,18 +232,15 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				p.setOpencodeSessionID(chatSessionID, resp.SessionID)
 			}
 
-			if err := p.sendReply(r.Context(), token, resp.Message); err != nil {
+			if err := p.sendReply(context.Background(), token, resp.Message); err != nil {
+				statusCode = http.StatusBadGateway
 				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 				return
 			}
-
-			processed++
-		}
+		}()
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":    "ok",
-			"processed": processed,
-			"ignored":   ignored,
+			"status": "ok",
 		})
 	})
 
@@ -383,7 +391,7 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 	query.Set("access_token", strings.TrimSpace(token))
 	endpoint.RawQuery = query.Encode()
 
-	payload := umeSendRequest{
+	payload := UmeSendRequest{
 		MsgType: "text",
 		Body:    content,
 	}
@@ -417,37 +425,18 @@ func sanitizeMessage(message string) string {
 	return strings.TrimSpace(cleaned)
 }
 
-type umeWebhookRequest struct {
-	Body      string         `json:"body"`
-	MsgID     flexibleString `json:"msgId"`
-	MsgType   string         `json:"msgType"`
-	MsgTypeV1 string         `json:"msgtype"`
-	SessionID flexibleString `json:"sessionId"`
-	Text      *umeTextBody   `json:"text,omitempty"`
+type UmeWebhookRequest struct {
+	Body                      string         `json:"body"`
+	MsgID                     flexibleString `json:"msgId"`
+	MsgType                   string         `json:"msgType"`
+	SenderId                  string         `json:"senderId"`
+	SessionID                 flexibleString `json:"sessionId"`
+	SessionWebhook            string         `json:"sessionWebhook"`
+	SessionWebhookExpiredTime int64          `json:"sessionWebhookExpiredTime"`
+	Timestamp                 int64          `json:"timestamp"`
 }
 
-func (r umeWebhookRequest) MessageType() string {
-	if strings.TrimSpace(r.MsgType) != "" {
-		return strings.TrimSpace(r.MsgType)
-	}
-	return strings.TrimSpace(r.MsgTypeV1)
-}
-
-func (r umeWebhookRequest) MessageBody() string {
-	if strings.TrimSpace(r.Body) != "" {
-		return r.Body
-	}
-	if r.Text != nil {
-		return r.Text.Content
-	}
-	return ""
-}
-
-type umeTextBody struct {
-	Content string `json:"content"`
-}
-
-type umeSendRequest struct {
+type UmeSendRequest struct {
 	MsgType string `json:"msgType"`
 	Body    string `json:"body"`
 }
