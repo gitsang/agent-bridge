@@ -1,4 +1,4 @@
-package chatapi
+package openai_compatible
 
 import (
 	"context"
@@ -37,14 +37,14 @@ func init() {
 		}
 
 		if infra.Logger == nil {
-			return nil, fmt.Errorf("chatapi infrastructure logger is required")
+			return nil, fmt.Errorf("openai-compatible infrastructure logger is required")
 		}
 
 		return New(name, infra.Logger, cfg), nil
 	}
 
 	coreplugin.Register(coreplugin.PluginFactory{
-		Name:      "chatapi",
+		Name:      "openai-compatible",
 		Construct: constructor,
 	})
 }
@@ -56,7 +56,7 @@ func defaultConfig() Config {
 func New(name string, logger *slog.Logger, cfg Config) *Plugin {
 	return &Plugin{
 		name:   name,
-		logger: logger.With("plugin_name", name, "plugin_type", "chatapi"),
+		logger: logger.With("plugin_name", name, "plugin_type", "openai-compatible"),
 		cfg:    cfg,
 	}
 }
@@ -67,7 +67,7 @@ func (p *Plugin) Name() string {
 
 func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
 	if handle == nil {
-		return fmt.Errorf("chatapi handle is required")
+		return fmt.Errorf("openai-compatible handle is required")
 	}
 
 	serverConfig := p.cfg
@@ -93,11 +93,11 @@ func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error 
 		return nil
 	}
 
-	return fmt.Errorf("listen chatapi http server: %w", err)
+	return fmt.Errorf("listen openai-compatible http server: %w", err)
 }
 
 func (p *Plugin) Send(_ context.Context, _ *connect.Message) (*connect.Message, error) {
-	return nil, fmt.Errorf("chatapi plugin does not support proactive send")
+	return nil, fmt.Errorf("openai-compatible plugin does not support proactive send")
 }
 
 func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
@@ -156,9 +156,9 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 }
 
 type openAIChatCompletionRequest struct {
-	Model    string                `json:"model"`
+	Model    string                 `json:"model"`
 	Messages []openAIRequestMessage `json:"messages"`
-	User     string                `json:"user,omitempty"`
+	User     string                 `json:"user,omitempty"`
 }
 
 type openAIRequestMessage struct {

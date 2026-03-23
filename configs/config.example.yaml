@@ -3,25 +3,16 @@ log:
     default: "default"
   providers:
     default:
-      - format: "console"
-        level: "info"
+      - format: "json"
+        level: "debug"
         verbosity: 3
         output:
           stdout:
             enable: true
-          stderr:
-            enable: false
-          file:
-            enable: false
-            path: "/var/log/opencode-connect/opencode-connect.log"
-            maxSize: "10mb"
-            maxAge: "7d"
-            maxBackups: 10
-            compress: true
 
 plugins:
-  openai-chat:
-    chatapi:
+  openai-compatible:
+    openai-compatible:
       listen: ":8192"
 
 opencode:
