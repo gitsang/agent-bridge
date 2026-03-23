@@ -12,6 +12,7 @@ This repository now includes a plugin-oriented `opencode-connect` runtime.
 - `opencode-connect` core owns directives/commands parsing and prompt invocation
 - Plugin owns chat transport adaptation and chat-session/opencode-session binding
 - ChatAPI plugin provides an OpenAI-compatible `POST /chat/completions` endpoint via `Serve(handle)`
+- UME plugin provides a webhook endpoint that strips `<at ...>...</at>` mentions, de-duplicates repeated `msgId`, and binds `sessionId` to opencode sessions in memory
 - In-memory mapping from chat `session_id` to opencode session
 - Message head commands:
   - `@session:{opencode-session-id}`
@@ -80,4 +81,27 @@ plugins:
   webui-chat:
     chatapi:
       listen: ":8193"
+
+  ume-bot:
+    ume:
+      listen: ":8194"
+      # optional, defaults to https://uc.yealink.com:443/linker/robot/send
+      send_url: "https://uc.yealink.com:443/linker/robot/send"
 ```
+
+### UME webhook
+
+`ume` listens for `POST /?access_token=...` with a JSON array payload such as:
+
+```json
+[
+  {
+    "body": "<at id=\"6943cf64f5e6479b808ce93de9c9b47c\">Opencode</at> hi",
+    "msgId": 742841436585590784,
+    "msgType": "text",
+    "sessionId": 742105222021128192
+  }
+]
+```
+
+The plugin removes the `<at ...>...</at>` prefix before sending the message to `connect.Handle`, remembers the returned opencode session ID per UME `sessionId`, and ignores retries where the same `msgId` is received again for that UME session.

@@ -15,6 +15,10 @@ plugins:
     openai-compatible:
       listen: ":8192"
 
+  ume:
+    ume:
+      listen: ":8193"
+
 opencode:
   baseurl: "http://127.0.0.1:4096"
   username: ""

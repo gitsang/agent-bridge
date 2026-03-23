@@ -14,6 +14,7 @@ import (
 	"github.com/gitsang/opencode-connect/internal/opencode"
 	"github.com/gitsang/opencode-connect/internal/plugin"
 	_ "github.com/gitsang/opencode-connect/internal/plugin/openai_compatible"
+	_ "github.com/gitsang/opencode-connect/internal/plugin/ume"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
