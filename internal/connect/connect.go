@@ -13,7 +13,7 @@ import (
 type sessionClient interface {
 	ListSessions(ctx context.Context) ([]opencode.Session, error)
 	GetSession(ctx context.Context, sessionID string) (*opencode.Session, error)
-	CreateSession(ctx context.Context, sessionID string) (*opencode.Session, error)
+	CreateSession(ctx context.Context) (*opencode.Session, error)
 	Prompt(ctx context.Context, sessionID string, message string) (*opencode.PromptResult, error)
 }
 
@@ -76,7 +76,7 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 			return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", targetOpencodeSessionID))
 		}
 	} else if targetOpencodeSessionID == "" {
-		createdSession, err := c.opencodeClient.CreateSession(ctx, "chat")
+		createdSession, err := c.opencodeClient.CreateSession(ctx)
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}

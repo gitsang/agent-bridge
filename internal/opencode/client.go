@@ -99,11 +99,8 @@ func (c *Client) GetSession(ctx context.Context, sessionId string) (*ocsdk.Sessi
 	return c.client.Session.Get(ctx, sessionId, ocsdk.SessionGetParams{})
 }
 
-func (c *Client) CreateSession(ctx context.Context, sessionId string) (*ocsdk.Session, error) {
-	title := fmt.Sprintf("chat-session-%s", sessionId)
-	return c.client.Session.New(ctx, ocsdk.SessionNewParams{
-		Title: ocsdk.F(title),
-	})
+func (c *Client) CreateSession(ctx context.Context) (*ocsdk.Session, error) {
+	return c.client.Session.New(ctx, ocsdk.SessionNewParams{})
 }
 
 func (c *Client) Prompt(ctx context.Context, sessionId string, message string) (*PromptResult, error) {

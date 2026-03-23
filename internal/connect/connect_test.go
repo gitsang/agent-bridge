@@ -87,9 +87,6 @@ func TestHandleCreatesSessionWhenRequestSessionIDMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if client.createSessionID != "chat" {
-		t.Fatalf("CreateSession() input = %q, want %q", client.createSessionID, "chat")
-	}
 	if client.promptSessionID != "ses_created" {
 		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "ses_created")
 	}
@@ -132,7 +129,6 @@ type fakeSessionClient struct {
 	createErr       error
 	promptErr       error
 	getSessionID    string
-	createSessionID string
 	promptSessionID string
 }
 
@@ -148,8 +144,7 @@ func (f *fakeSessionClient) GetSession(_ context.Context, sessionID string) (*op
 	return &opencode.Session{ID: sessionID}, nil
 }
 
-func (f *fakeSessionClient) CreateSession(_ context.Context, sessionID string) (*opencode.Session, error) {
-	f.createSessionID = sessionID
+func (f *fakeSessionClient) CreateSession(_ context.Context) (*opencode.Session, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
