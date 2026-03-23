@@ -16,14 +16,29 @@ type sessionClient interface {
 	Prompt(ctx context.Context, sessionID string, message string) (*opencode.PromptResult, error)
 }
 
+type OptionFunc func(*OpencodeConnect)
+
 type OpencodeConnect struct {
 	opencodeClient sessionClient
 }
 
-func New(opencodeClient sessionClient) *OpencodeConnect {
-	return &OpencodeConnect{
-		opencodeClient: opencodeClient,
+func WithOpencodeClient(client sessionClient) OptionFunc {
+	return func(target *OpencodeConnect) {
+		target.opencodeClient = client
 	}
+}
+
+func New(optfs ...OptionFunc) *OpencodeConnect {
+	connector := &OpencodeConnect{}
+
+	for _, apply := range optfs {
+		if apply == nil {
+			continue
+		}
+		apply(connector)
+	}
+
+	return connector
 }
 
 func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, error) {

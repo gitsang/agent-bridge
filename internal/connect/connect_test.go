@@ -18,7 +18,7 @@ func TestHandleUsesRequestSessionID(t *testing.T) {
 		},
 	}
 
-	connector := New(client)
+	connector := New(WithOpencodeClient(client))
 	resp, err := connector.Handle(context.Background(), &Message{
 		SessionID: "opencode-session-1",
 		Message:   "hello world",
@@ -47,7 +47,7 @@ func TestHandleUsesDirectiveSession(t *testing.T) {
 		},
 	}
 
-	connector := New(client)
+	connector := New(WithOpencodeClient(client))
 	resp, err := connector.Handle(context.Background(), &Message{
 		SessionID: "ignored-by-directive",
 		Message:   "@session:existing-session\n\nhello world",
@@ -66,6 +66,32 @@ func TestHandleUsesDirectiveSession(t *testing.T) {
 	}
 	if client.promptSessionID != "existing-session" {
 		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "existing-session")
+	}
+}
+
+func TestNewAppliesOptions(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeSessionClient{}
+	connector := New(WithOpencodeClient(client))
+	if connector.opencodeClient != client {
+		t.Fatalf("New() opencodeClient = %v, want %v", connector.opencodeClient, client)
+	}
+}
+
+func TestHandleRequiresOpencodeClient(t *testing.T) {
+	t.Parallel()
+
+	connector := New()
+	_, err := connector.Handle(context.Background(), &Message{
+		SessionID: "session-1",
+		Message:   "hello world",
+	})
+	if err == nil {
+		t.Fatal("Handle() error = nil, want error")
+	}
+	if got, want := err.Error(), "opencode client is required"; got != want {
+		t.Fatalf("Handle() error = %q, want %q", got, want)
 	}
 }
 

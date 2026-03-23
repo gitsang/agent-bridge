@@ -49,7 +49,7 @@ func init() {
 }
 
 func Run(cmd *cobra.Command, _ []string) error {
-	// Load configuration
+	// Setup
 	var c Config
 	err := cfger.Load(&c, rootFlags.ConfigFile)
 	if err != nil {
@@ -57,14 +57,12 @@ func Run(cmd *cobra.Command, _ []string) error {
 		os.Exit(-1)
 	}
 
-	// Setup log handler
 	logHandlers, err := BuildLogHandlers(c)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
 
-	// Preparing
 	logger := slog.New(logHandlers.Get(c.Log.Handlers.Default))
 	logger.Debug("Preparing...",
 		slog.Any("flags", rootFlags),
@@ -77,7 +75,9 @@ func Run(cmd *cobra.Command, _ []string) error {
 		c.Opencode.BaseURL,
 		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
 	)
-	connector := connect.New(opencodeClient)
+	connector := connect.New(
+		connect.WithOpencodeClient(opencodeClient),
+	)
 
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
