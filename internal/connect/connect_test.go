@@ -69,6 +69,35 @@ func TestHandleUsesDirectiveSession(t *testing.T) {
 	}
 }
 
+func TestHandleCreatesSessionWhenRequestSessionIDMissing(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeSessionClient{
+		createdSession: &opencode.Session{ID: "ses_created"},
+		promptResult: &opencode.PromptResult{
+			Reply:             "hello",
+			OpencodeSessionID: "ses_created",
+		},
+	}
+
+	connector := New(WithOpencodeClient(client))
+	resp, err := connector.Handle(context.Background(), &Message{
+		Message: "hello world",
+	})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if client.createSessionID != "chat" {
+		t.Fatalf("CreateSession() input = %q, want %q", client.createSessionID, "chat")
+	}
+	if client.promptSessionID != "ses_created" {
+		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "ses_created")
+	}
+	if resp.SessionID != "ses_created" {
+		t.Fatalf("Handle() session = %q, want %q", resp.SessionID, "ses_created")
+	}
+}
+
 func TestNewAppliesOptions(t *testing.T) {
 	t.Parallel()
 
@@ -97,10 +126,13 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 
 type fakeSessionClient struct {
 	promptResult    *opencode.PromptResult
+	createdSession  *opencode.Session
 	listSessions    []opencode.Session
 	getErr          error
+	createErr       error
 	promptErr       error
 	getSessionID    string
+	createSessionID string
 	promptSessionID string
 }
 
@@ -114,6 +146,17 @@ func (f *fakeSessionClient) GetSession(_ context.Context, sessionID string) (*op
 		return nil, f.getErr
 	}
 	return &opencode.Session{ID: sessionID}, nil
+}
+
+func (f *fakeSessionClient) CreateSession(_ context.Context, sessionID string) (*opencode.Session, error) {
+	f.createSessionID = sessionID
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	if f.createdSession == nil {
+		return nil, fmt.Errorf("created session is required")
+	}
+	return f.createdSession, nil
 }
 
 func (f *fakeSessionClient) Prompt(_ context.Context, sessionID string, _ string) (*opencode.PromptResult, error) {

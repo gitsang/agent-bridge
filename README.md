@@ -29,6 +29,8 @@ type Plugin interface {
 
 `connect.Handle` is the single core entry for all plugin requests.
 
+When the OpenAI-compatible plugin receives a request without `user`, it forwards an empty session ID to `connect`, stores the returned opencode session ID in memory, and reuses it for later anonymous requests.
+
 ### Request
 
 ```bash
@@ -37,11 +39,12 @@ curl -X POST -H "Content-Type: application/json" \
     "model": "opencode-connect",
     "messages": [
       {"role": "user", "content": "hello world"}
-    ],
-    "user": "1"
+    ]
   }' \
   http://127.0.0.1:8192/chat/completions
 ```
+
+Add `"user": "ses_xxx"` only when you want to target an existing opencode session explicitly.
 
 ### Build & Run
 
@@ -54,7 +57,7 @@ go run ./cmd/opencode-connect -c configs/config.yaml
 
 ```bash
 chmod +x scripts/chat-curl.sh
-./scripts/chat-curl.sh "hello world" 1
+./scripts/chat-curl.sh "hello world"
 ```
 
 ### Config via env

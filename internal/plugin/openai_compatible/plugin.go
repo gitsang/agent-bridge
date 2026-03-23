@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gitsang/opencode-connect/internal/connect"
@@ -20,9 +21,11 @@ type Config struct {
 }
 
 type Plugin struct {
-	name   string
-	logger *slog.Logger
-	cfg    Config
+	name          string
+	logger        *slog.Logger
+	cfg           Config
+	mu            sync.RWMutex
+	lastSessionID string
 }
 
 func init() {
@@ -128,9 +131,10 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			return
 		}
 
-		sessionID := strings.TrimSpace(req.User)
+		requestSessionID := strings.TrimSpace(req.User)
+		sessionID := requestSessionID
 		if sessionID == "" {
-			sessionID = "default"
+			sessionID = p.getLastSessionID()
 		}
 
 		connectReq := connect.Message{
@@ -149,10 +153,31 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			return
 		}
 
+		if requestSessionID == "" && strings.TrimSpace(resp.SessionID) != "" {
+			p.setLastSessionID(resp.SessionID)
+		}
+
 		writeJSON(w, http.StatusOK, newOpenAIChatCompletionResponse(req.Model, resp.Message))
 	})
 
 	return mux
+}
+
+func (p *Plugin) getLastSessionID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.lastSessionID
+}
+
+func (p *Plugin) setLastSessionID(sessionID string) {
+	resolved := strings.TrimSpace(sessionID)
+	if resolved == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastSessionID = resolved
 }
 
 type openAIChatCompletionRequest struct {

@@ -126,10 +126,6 @@ func (c *Client) Prompt(ctx context.Context, sessionId string, message string) (
 
 	params := ocsdk.SessionPromptParams{
 		Parts: ocsdk.F(parts),
-		Model: ocsdk.F(ocsdk.SessionPromptParamsModel{
-			ProviderID: ocsdk.F(""),
-			ModelID:    ocsdk.F(""),
-		}),
 	}
 
 	resp, err := c.client.Session.Prompt(promptCtx, sessionId, params)

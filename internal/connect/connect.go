@@ -13,6 +13,7 @@ import (
 type sessionClient interface {
 	ListSessions(ctx context.Context) ([]opencode.Session, error)
 	GetSession(ctx context.Context, sessionID string) (*opencode.Session, error)
+	CreateSession(ctx context.Context, sessionID string) (*opencode.Session, error)
 	Prompt(ctx context.Context, sessionID string, message string) (*opencode.PromptResult, error)
 }
 
@@ -46,9 +47,6 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 		return nil, NewError(http.StatusBadRequest, "request is required")
 	}
 
-	if strings.TrimSpace(req.SessionID) == "" {
-		return nil, NewError(http.StatusBadRequest, "session_id is required")
-	}
 	if c.opencodeClient == nil {
 		return nil, NewError(http.StatusInternalServerError, "opencode client is required")
 	}
@@ -77,6 +75,15 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 		if _, err := c.opencodeClient.GetSession(ctx, targetOpencodeSessionID); err != nil {
 			return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", targetOpencodeSessionID))
 		}
+	} else if targetOpencodeSessionID == "" {
+		createdSession, err := c.opencodeClient.CreateSession(ctx, "chat")
+		if err != nil {
+			return nil, NewError(http.StatusBadGateway, err.Error())
+		}
+		if createdSession == nil || strings.TrimSpace(createdSession.ID) == "" {
+			return nil, NewError(http.StatusBadGateway, "created session id is required")
+		}
+		targetOpencodeSessionID = strings.TrimSpace(createdSession.ID)
 	}
 
 	result, err := c.opencodeClient.Prompt(ctx, targetOpencodeSessionID, parsed.Body)

@@ -1,5 +1,6 @@
 services:
   opencode-connect:
+    image: opencode-connect:local
     build:
       context: .
       dockerfile: Containerfile
