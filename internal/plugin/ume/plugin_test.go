@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gitsang/opencode-connect/internal/connect"
 )
@@ -22,10 +24,10 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 
-	handleCalls := 0
+	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
-		handleCalls++
-		switch handleCalls {
+		handleCount := handleCalls.Add(1)
+		switch handleCount {
 		case 1:
 			if got, want := req.Message, "hi"; got != want {
 				t.Fatalf("first request message = %q, want %q", got, want)
@@ -43,7 +45,7 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 			}
 			return &connect.Message{Message: req.SessionID, SessionID: req.SessionID}, nil
 		default:
-			t.Fatalf("unexpected handle call count: %d", handleCalls)
+			t.Fatalf("unexpected handle call count: %d", handleCount)
 			return nil, nil
 		}
 	})
@@ -74,9 +76,17 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 		t.Fatalf("second response code = %d, want %d", got, want)
 	}
 
-	if got, want := handleCalls, 2; got != want {
+	waitForCondition(t, func() bool {
+		return handleCalls.Load() == 2
+	}, "handle two webhook messages")
+
+	if got, want := int(handleCalls.Load()), 2; got != want {
 		t.Fatalf("handle calls = %d, want %d", got, want)
 	}
+
+	waitForCondition(t, func() bool {
+		return len(sendRecorder.Requests()) == 2
+	}, "record two send requests")
 
 	requests := sendRecorder.Requests()
 	if got, want := len(requests), 2; got != want {
@@ -101,9 +111,9 @@ func TestPluginIgnoresDuplicateMessageID(t *testing.T) {
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 
-	handleCalls := 0
+	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
-		handleCalls++
+		handleCalls.Add(1)
 		return &connect.Message{Message: "reply", SessionID: "ses_created"}, nil
 	})
 
@@ -130,9 +140,17 @@ func TestPluginIgnoresDuplicateMessageID(t *testing.T) {
 		t.Fatalf("second response code = %d, want %d", got, want)
 	}
 
-	if got, want := handleCalls, 1; got != want {
+	waitForCondition(t, func() bool {
+		return handleCalls.Load() == 1
+	}, "handle initial webhook message once")
+
+	if got, want := int(handleCalls.Load()), 1; got != want {
 		t.Fatalf("handle calls = %d, want %d", got, want)
 	}
+
+	waitForCondition(t, func() bool {
+		return len(sendRecorder.Requests()) == 1
+	}, "record one send request")
 
 	requests := sendRecorder.Requests()
 	if got, want := len(requests), 1; got != want {
@@ -156,9 +174,9 @@ func TestPluginIgnoresRetriedOlderMessageID(t *testing.T) {
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 
-	handleCalls := 0
+	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
-		handleCalls++
+		handleCalls.Add(1)
 		return &connect.Message{Message: req.Message, SessionID: "ses_created"}, nil
 	})
 
@@ -178,9 +196,17 @@ func TestPluginIgnoresRetriedOlderMessageID(t *testing.T) {
 		}
 	}
 
-	if got, want := handleCalls, 2; got != want {
+	waitForCondition(t, func() bool {
+		return handleCalls.Load() == 2
+	}, "handle two unique webhook messages")
+
+	if got, want := int(handleCalls.Load()), 2; got != want {
 		t.Fatalf("handle calls = %d, want %d", got, want)
 	}
+
+	waitForCondition(t, func() bool {
+		return len(sendRecorder.Requests()) == 2
+	}, "record two send requests for unique messages")
 
 	sent := sendRecorder.Requests()
 	if got, want := len(sent), 2; got != want {
@@ -213,9 +239,23 @@ func TestSanitizeMessageRemovesAtTag(t *testing.T) {
 	}
 }
 
+func waitForCondition(t *testing.T, condition func() bool, description string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting to %s", description)
+}
+
 type sendRecorderRequest struct {
 	Token   string
-	Payload umeSendRequest
+	Payload UmeSendRequest
 }
 
 type sendRecorderServer struct {
@@ -229,7 +269,7 @@ func newSendRecorderServer() *sendRecorderServer {
 	recorder.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		var payload umeSendRequest
+		var payload UmeSendRequest
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return

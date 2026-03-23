@@ -180,8 +180,8 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			return
 		}
 
-		var request UmeWebhookRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		request, err := decodeWebhookRequest(r.Body)
+		if err != nil {
 			statusCode = http.StatusBadRequest
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 			return
@@ -189,6 +189,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 		messageType := request.MsgType
 		if messageType != "" && messageType != "text" {
 			p.logger.Debug("ignore unsupported ume message type", "msg_type", messageType)
+			writeJSON(w, http.StatusOK, map[string]any{"ignored": 1})
 			return
 		}
 
@@ -202,42 +203,58 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 		msgID := request.MsgID.String()
 		if p.markDuplicate(chatSessionID, msgID) {
 			p.logger.Debug("ignore duplicate ume message", "session_id", chatSessionID, "msg_id", msgID)
+			writeJSON(w, http.StatusOK, map[string]any{"ignored": 1})
 			return
 		}
 
 		message := sanitizeMessage(request.Body)
 		if message == "" {
 			p.logger.Debug("ignore empty ume message after cleanup", "session_id", chatSessionID, "msg_id", msgID)
+			writeJSON(w, http.StatusOK, map[string]any{"ignored": 1})
 			return
 		}
 
-		go func() {
-			connectReq := connect.Message{
-				Message:   message,
-				SessionID: p.getOpencodeSessionID(chatSessionID),
+		connectReq := connect.Message{
+			Message:   message,
+			SessionID: p.getOpencodeSessionID(chatSessionID),
+		}
+		replyLogger := p.logger.With(
+			"session_id", chatSessionID,
+			"msg_id", msgID,
+			"request_message_length", len(message),
+			"opencode_session_id", strings.TrimSpace(connectReq.SessionID),
+		)
+		resp, err := handle(r.Context(), &connectReq)
+		if err != nil {
+			replyLogger.Debug("ume reply handler failed", "error", err)
+			status := http.StatusBadGateway
+			var connectError *connect.Error
+			if errors.As(err, &connectError) {
+				status = connectError.StatusCode
 			}
-			resp, err := handle(context.Background(), &connectReq)
-			if err != nil {
-				status := http.StatusBadGateway
-				var connectError *connect.Error
-				if errors.As(err, &connectError) {
-					status = connectError.StatusCode
-				}
-				statusCode = status
-				writeJSON(w, status, map[string]any{"error": err.Error()})
-				return
-			}
+			statusCode = status
+			writeJSON(w, status, map[string]any{"error": err.Error()})
+			return
+		}
 
-			if strings.TrimSpace(resp.SessionID) != "" {
-				p.setOpencodeSessionID(chatSessionID, resp.SessionID)
-			}
+		if strings.TrimSpace(resp.SessionID) != "" {
+			p.setOpencodeSessionID(chatSessionID, resp.SessionID)
+			replyLogger = replyLogger.With("reply_session_id", strings.TrimSpace(resp.SessionID))
+		}
 
-			if err := p.sendReply(context.Background(), token, resp.Message); err != nil {
-				statusCode = http.StatusBadGateway
-				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-				return
-			}
-		}()
+		replyLogger.Debug("ume reply handler succeeded",
+			"reply_message_length", len(resp.Message),
+			"reply_session_id_present", strings.TrimSpace(resp.SessionID) != "",
+		)
+
+		if err := p.sendReply(r.Context(), token, resp.Message); err != nil {
+			replyLogger.Debug("ume reply delivery failed", "error", err)
+			statusCode = http.StatusBadGateway
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+
+		replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Message))
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
@@ -390,6 +407,14 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 	query := endpoint.Query()
 	query.Set("access_token", strings.TrimSpace(token))
 	endpoint.RawQuery = query.Encode()
+	logger := p.logger.With(
+		"send_scheme", endpoint.Scheme,
+		"send_host", endpoint.Host,
+		"send_path", endpoint.Path,
+		"content_length", len(content),
+		"access_token_present", strings.TrimSpace(token) != "",
+	)
+	logger.Debug("ume send reply start")
 
 	payload := UmeSendRequest{
 		MsgType: "text",
@@ -397,25 +422,44 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
+		logger.Debug("ume send reply marshal failed", "error", err)
 		return fmt.Errorf("marshal ume reply: %w", err)
 	}
+	logger.Debug("ume send reply payload ready", "payload_bytes", len(payloadBytes))
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payloadBytes))
 	if err != nil {
+		logger.Debug("ume send reply request build failed", "error", err)
 		return fmt.Errorf("build ume reply request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	logger.Debug("ume send reply request built", "method", httpReq.Method)
 
+	startedAt := time.Now()
 	httpResp, err := p.httpClient.Do(httpReq)
 	if err != nil {
+		logger.Debug("ume send reply request failed",
+			"error", err,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
 		return fmt.Errorf("send ume reply: %w", err)
 	}
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
+		logger.Debug("ume send reply rejected",
+			"status_code", httpResp.StatusCode,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"response_body", strings.TrimSpace(string(body)),
+		)
 		return fmt.Errorf("ume reply failed: status=%d body=%s", httpResp.StatusCode, strings.TrimSpace(string(body)))
 	}
+
+	logger.Debug("ume send reply completed",
+		"status_code", httpResp.StatusCode,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+	)
 
 	return nil
 }
@@ -423,6 +467,28 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 func sanitizeMessage(message string) string {
 	cleaned := atTagPattern.ReplaceAllString(message, "")
 	return strings.TrimSpace(cleaned)
+}
+
+func decodeWebhookRequest(body io.Reader) (UmeWebhookRequest, error) {
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return UmeWebhookRequest{}, fmt.Errorf("read ume webhook body: %w", err)
+	}
+
+	var request UmeWebhookRequest
+	if err := json.Unmarshal(bodyBytes, &request); err == nil {
+		return request, nil
+	}
+
+	var requests []UmeWebhookRequest
+	if err := json.Unmarshal(bodyBytes, &requests); err != nil {
+		return UmeWebhookRequest{}, err
+	}
+	if len(requests) == 0 {
+		return UmeWebhookRequest{}, fmt.Errorf("ume webhook body is empty")
+	}
+
+	return requests[0], nil
 }
 
 type UmeWebhookRequest struct {
