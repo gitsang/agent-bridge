@@ -163,6 +163,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			logger.Info("ume webhook access",
 				"status_code", statusCode,
 				"duration_ms", time.Since(startedAt).Milliseconds(),
+				"access_token", r.URL.Query().Get("access_token"),
 				"access_token_present", strings.TrimSpace(r.URL.Query().Get("access_token")) != "",
 			)
 		}()
@@ -214,47 +215,49 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			return
 		}
 
-		connectReq := connect.Message{
-			Message:   message,
-			SessionID: p.getOpencodeSessionID(chatSessionID),
-		}
-		replyLogger := p.logger.With(
-			"session_id", chatSessionID,
-			"msg_id", msgID,
-			"request_message_length", len(message),
-			"opencode_session_id", strings.TrimSpace(connectReq.SessionID),
-		)
-		resp, err := handle(r.Context(), &connectReq)
-		if err != nil {
-			replyLogger.Debug("ume reply handler failed", "error", err)
-			status := http.StatusBadGateway
-			var connectError *connect.Error
-			if errors.As(err, &connectError) {
-				status = connectError.StatusCode
+		go func() {
+			connectReq := connect.Message{
+				Message:   message,
+				SessionID: p.getOpencodeSessionID(chatSessionID),
 			}
-			statusCode = status
-			writeJSON(w, status, map[string]any{"error": err.Error()})
-			return
-		}
+			replyLogger := p.logger.With(
+				"session_id", chatSessionID,
+				"msg_id", msgID,
+				"request_message_length", len(message),
+				"opencode_session_id", strings.TrimSpace(connectReq.SessionID),
+			)
+			resp, err := handle(context.Background(), &connectReq)
+			if err != nil {
+				replyLogger.Debug("ume reply handler failed", "error", err)
+				status := http.StatusBadGateway
+				var connectError *connect.Error
+				if errors.As(err, &connectError) {
+					status = connectError.StatusCode
+				}
+				statusCode = status
+				writeJSON(w, status, map[string]any{"error": err.Error()})
+				return
+			}
 
-		if strings.TrimSpace(resp.SessionID) != "" {
-			p.setOpencodeSessionID(chatSessionID, resp.SessionID)
-			replyLogger = replyLogger.With("reply_session_id", strings.TrimSpace(resp.SessionID))
-		}
+			if strings.TrimSpace(resp.SessionID) != "" {
+				p.setOpencodeSessionID(chatSessionID, resp.SessionID)
+				replyLogger = replyLogger.With("reply_session_id", strings.TrimSpace(resp.SessionID))
+			}
 
-		replyLogger.Debug("ume reply handler succeeded",
-			"reply_message_length", len(resp.Message),
-			"reply_session_id_present", strings.TrimSpace(resp.SessionID) != "",
-		)
+			replyLogger.Debug("ume reply handler succeeded",
+				"reply_message_length", len(resp.Message),
+				"reply_session_id_present", strings.TrimSpace(resp.SessionID) != "",
+			)
 
-		if err := p.sendReply(r.Context(), token, resp.Message); err != nil {
-			replyLogger.Debug("ume reply delivery failed", "error", err)
-			statusCode = http.StatusBadGateway
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-			return
-		}
+			if err := p.sendReply(context.Background(), token, resp.Message); err != nil {
+				replyLogger.Debug("ume reply delivery failed", "error", err)
+				statusCode = http.StatusBadGateway
+				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+				return
+			}
 
-		replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Message))
+			replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Message))
+		}()
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
@@ -412,6 +415,7 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 		"send_host", endpoint.Host,
 		"send_path", endpoint.Path,
 		"content_length", len(content),
+		"access_token", strings.TrimSpace(token),
 		"access_token_present", strings.TrimSpace(token) != "",
 	)
 	logger.Debug("ume send reply start")
