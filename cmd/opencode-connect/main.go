@@ -13,7 +13,7 @@ import (
 	"github.com/gitsang/opencode-connect/internal/connect"
 	"github.com/gitsang/opencode-connect/internal/opencode"
 	"github.com/gitsang/opencode-connect/internal/plugin"
-	_ "github.com/gitsang/opencode-connect/internal/plugin/chatapi"
+	_ "github.com/gitsang/opencode-connect/internal/plugin/openai_compatible"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
