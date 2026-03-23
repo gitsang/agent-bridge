@@ -11,7 +11,7 @@ This repository now includes a plugin-oriented `opencode-connect` runtime.
 - Plugin-based integration entry (`plugins.<instance>.<type>`)
 - `opencode-connect` core owns directives/commands parsing and prompt invocation
 - Plugin owns chat transport adaptation and chat-session/opencode-session binding
-- ChatAPI plugin provides a `POST /chat` synchronous endpoint via `Serve(handle)`
+- ChatAPI plugin provides an OpenAI-compatible `POST /chat/completions` endpoint via `Serve(handle)`
 - In-memory mapping from chat `session_id` to opencode session
 - Message head commands:
   - `@session:{opencode-session-id}`
@@ -34,10 +34,13 @@ type Plugin interface {
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -d '{
-    "message": "hello world",
-    "session_id": "1"
+    "model": "opencode-connect",
+    "messages": [
+      {"role": "user", "content": "hello world"}
+    ],
+    "user": "1"
   }' \
-  http://127.0.0.1:8192/chat
+  http://127.0.0.1:8192/chat/completions
 ```
 
 ### Build & Run

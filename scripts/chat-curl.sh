@@ -16,6 +16,6 @@ if [[ $# -ge 2 ]]; then
   SESSION_ID="$2"
 fi
 
-curl -sS -X POST "${BASE_URL}/chat" \
+curl -sS -X POST "${BASE_URL}/chat/completions" \
   -H "Content-Type: application/json" \
-  -d "{\"message\":$(printf '%s' "$MESSAGE" | jq -Rs .),\"session_id\":$(printf '%s' "$SESSION_ID" | jq -Rs .)}"
+  -d "{\"model\":\"opencode-connect\",\"messages\":[{\"role\":\"user\",\"content\":$(printf '%s' "$MESSAGE" | jq -Rs .)}],\"user\":$(printf '%s' "$SESSION_ID" | jq -Rs .)}"

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gitsang/opencode-connect/internal/connect"
@@ -107,7 +108,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
@@ -115,26 +116,148 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 
 		r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
 
-		var req connect.Message
+		var req openAIChatCompletionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			writeOpenAIError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 
-		resp, err := handle(r.Context(), &req)
+		message, err := req.UserMessage()
+		if err != nil {
+			writeOpenAIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		sessionID := strings.TrimSpace(req.User)
+		if sessionID == "" {
+			sessionID = "default"
+		}
+
+		connectReq := connect.Message{
+			Message:   message,
+			SessionID: sessionID,
+		}
+
+		resp, err := handle(r.Context(), &connectReq)
 		if err != nil {
 			status := http.StatusInternalServerError
 			var connectError *connect.Error
 			if errors.As(err, &connectError) {
 				status = connectError.StatusCode
 			}
-			writeJSON(w, status, map[string]any{"error": err.Error()})
+			writeOpenAIError(w, status, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, resp)
+
+		writeJSON(w, http.StatusOK, newOpenAIChatCompletionResponse(req.Model, resp.Message))
 	})
 
 	return mux
+}
+
+type openAIChatCompletionRequest struct {
+	Model    string                `json:"model"`
+	Messages []openAIRequestMessage `json:"messages"`
+	User     string                `json:"user,omitempty"`
+}
+
+type openAIRequestMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+func (r openAIChatCompletionRequest) UserMessage() (string, error) {
+	if len(r.Messages) == 0 {
+		return "", fmt.Errorf("messages is required")
+	}
+
+	for i := len(r.Messages) - 1; i >= 0; i-- {
+		msg := r.Messages[i]
+		if strings.TrimSpace(msg.Role) != "user" {
+			continue
+		}
+
+		content, err := parseOpenAIMessageContent(msg.Content)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			return "", fmt.Errorf("user message content is required")
+		}
+		return content, nil
+	}
+
+	return "", fmt.Errorf("at least one user role message is required")
+}
+
+func parseOpenAIMessageContent(raw json.RawMessage) (string, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
+	}
+
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return "", fmt.Errorf("message content must be a string or text parts array")
+	}
+
+	segments := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) != "text" {
+			continue
+		}
+		if strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		segments = append(segments, part.Text)
+	}
+
+	if len(segments) == 0 {
+		return "", fmt.Errorf("user message content is required")
+	}
+
+	return strings.Join(segments, "\n"), nil
+}
+
+func newOpenAIChatCompletionResponse(model, content string) map[string]any {
+	if strings.TrimSpace(model) == "" {
+		model = "opencode-connect"
+	}
+
+	return map[string]any{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
+		"model":   model,
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"message": map[string]any{
+					"role":    "assistant",
+					"content": content,
+				},
+				"finish_reason": "stop",
+			},
+		},
+		"usage": map[string]int{
+			"prompt_tokens":     0,
+			"completion_tokens": 0,
+			"total_tokens":      0,
+		},
+	}
+}
+
+func writeOpenAIError(w http.ResponseWriter, statusCode int, message string) {
+	writeJSON(w, statusCode, map[string]any{
+		"error": map[string]any{
+			"message": message,
+			"type":    "invalid_request_error",
+			"code":    statusCode,
+		},
+	})
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
