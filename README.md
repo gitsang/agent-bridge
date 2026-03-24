@@ -19,3 +19,10 @@ An opencode plugin for connecting opencode to chat application
 ## Plugins
 
 ## Contribute
+
+## TODO List
+
+- [ ] 支持 SO 插件
+- [ ] 统一和完善 Message 命令列表
+- [ ] 完善部署和使用教程
+- [ ] 支持 ACP 协议对接 claude code 等 agent
