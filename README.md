@@ -18,6 +18,38 @@ An opencode plugin for connecting opencode to chat application
 
 ## Plugins
 
+我们使用插件的形式来实现不同聊天软件的集成。
+
+插件的职责只有：**传递消息**
+
+负责建立通讯软件与 Connect 之间的桥梁，负责数据转换等工作。
+
+### 接口
+
+插件使用统一的接口
+
+```go
+type Plugin interface {
+	Name() string
+	Serve(ctx context.Context, handle HandleFunc) error
+	Send(ctx context.Context, req *connect.Message) (*connect.Message, error)
+}
+```
+
+只需要做一件事情，就是如何接收消息，转换消息，调用 HandlerFunc 处理，然后转换响应，将消息送回通讯软件。
+
+一个简单的伪代码例子：
+
+```go
+func (p *MyPlugin) Serve(ctx context.Context, handle plugin.HandleFunc) error {
+  for {
+    message := ReceiveMessageFromChatApp()
+    response, _ := handle(ctx, message)
+    SendMessageToChatApp(response)
+  }
+}
+```
+
 ## Contribute
 
 ## TODO List
