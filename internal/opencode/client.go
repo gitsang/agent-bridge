@@ -39,6 +39,9 @@ func WithTimeout(timeout time.Duration) Option {
 type PromptResult struct {
 	Reply             string
 	OpencodeSessionID string
+	Title             string
+	Workdir           string
+	Model             string
 }
 
 type Client struct {
@@ -130,10 +133,30 @@ func (c *Client) Prompt(ctx context.Context, sessionId string, message string) (
 		return nil, err
 	}
 
-	return &PromptResult{
+	resolvedSessionID := strings.TrimSpace(resp.Info.SessionID)
+	if resolvedSessionID == "" {
+		resolvedSessionID = strings.TrimSpace(sessionId)
+	}
+
+	result := &PromptResult{
 		Reply:             extractReply(resp.Parts),
-		OpencodeSessionID: sessionId,
-	}, nil
+		OpencodeSessionID: resolvedSessionID,
+		Model:             strings.TrimSpace(resp.Info.ModelID),
+	}
+
+	if resolvedSessionID == "" {
+		return result, nil
+	}
+
+	session, err := c.client.Session.Get(promptCtx, resolvedSessionID, ocsdk.SessionGetParams{})
+	if err != nil || session == nil {
+		return result, nil
+	}
+
+	result.Title = strings.TrimSpace(session.Title)
+	result.Workdir = strings.TrimSpace(session.Directory)
+
+	return result, nil
 }
 
 func extractReply(parts []ocsdk.Part) string {

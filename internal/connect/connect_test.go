@@ -15,6 +15,9 @@ func TestHandleUsesRequestSessionID(t *testing.T) {
 		promptResult: &opencode.PromptResult{
 			Reply:             "hello",
 			OpencodeSessionID: "opencode-session-1",
+			Title:             "Test Title",
+			Workdir:           "/tmp/project",
+			Model:             "openai/gpt-5.4",
 		},
 	}
 
@@ -32,6 +35,15 @@ func TestHandleUsesRequestSessionID(t *testing.T) {
 	if resp.Message != "hello" {
 		t.Fatalf("Handle() message = %q, want %q", resp.Message, "hello")
 	}
+	if resp.Title != "Test Title" {
+		t.Fatalf("Handle() title = %q, want %q", resp.Title, "Test Title")
+	}
+	if resp.Workdir != "/tmp/project" {
+		t.Fatalf("Handle() workdir = %q, want %q", resp.Workdir, "/tmp/project")
+	}
+	if resp.Model != "openai/gpt-5.4" {
+		t.Fatalf("Handle() model = %q, want %q", resp.Model, "openai/gpt-5.4")
+	}
 	if client.promptSessionID != "opencode-session-1" {
 		t.Fatalf("Prompt() session = %q, want %q", client.promptSessionID, "opencode-session-1")
 	}
@@ -44,6 +56,9 @@ func TestHandleUsesDirectiveSession(t *testing.T) {
 		promptResult: &opencode.PromptResult{
 			Reply:             "hello",
 			OpencodeSessionID: "existing-session",
+			Title:             "Existing Session",
+			Workdir:           "/repo/existing",
+			Model:             "anthropic/claude-sonnet-4",
 		},
 	}
 
@@ -61,6 +76,15 @@ func TestHandleUsesDirectiveSession(t *testing.T) {
 	if resp.Message != "hello" {
 		t.Fatalf("Handle() message = %q, want %q", resp.Message, "hello")
 	}
+	if resp.Title != "Existing Session" {
+		t.Fatalf("Handle() title = %q, want %q", resp.Title, "Existing Session")
+	}
+	if resp.Workdir != "/repo/existing" {
+		t.Fatalf("Handle() workdir = %q, want %q", resp.Workdir, "/repo/existing")
+	}
+	if resp.Model != "anthropic/claude-sonnet-4" {
+		t.Fatalf("Handle() model = %q, want %q", resp.Model, "anthropic/claude-sonnet-4")
+	}
 	if client.getSessionID != "existing-session" {
 		t.Fatalf("GetSession() session = %q, want %q", client.getSessionID, "existing-session")
 	}
@@ -77,6 +101,9 @@ func TestHandleCreatesSessionWhenRequestSessionIDMissing(t *testing.T) {
 		promptResult: &opencode.PromptResult{
 			Reply:             "hello",
 			OpencodeSessionID: "ses_created",
+			Title:             "Created Session",
+			Workdir:           "/repo/created",
+			Model:             "openai/gpt-5.4",
 		},
 	}
 
@@ -92,6 +119,33 @@ func TestHandleCreatesSessionWhenRequestSessionIDMissing(t *testing.T) {
 	}
 	if resp.SessionID != "ses_created" {
 		t.Fatalf("Handle() session = %q, want %q", resp.SessionID, "ses_created")
+	}
+	if resp.Title != "Created Session" {
+		t.Fatalf("Handle() title = %q, want %q", resp.Title, "Created Session")
+	}
+	if resp.Workdir != "/repo/created" {
+		t.Fatalf("Handle() workdir = %q, want %q", resp.Workdir, "/repo/created")
+	}
+	if resp.Model != "openai/gpt-5.4" {
+		t.Fatalf("Handle() model = %q, want %q", resp.Model, "openai/gpt-5.4")
+	}
+}
+
+func TestHandleSessionsCommandSetsTitle(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeSessionClient{}
+	connector := New(WithOpencodeClient(client))
+
+	resp, err := connector.Handle(context.Background(), &Message{Message: "/sessions"})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if got, want := resp.Title, "Sessions"; got != want {
+		t.Fatalf("Handle() title = %q, want %q", got, want)
+	}
+	if got, want := resp.Command, slashSessions; got != want {
+		t.Fatalf("Handle() command = %q, want %q", got, want)
 	}
 }
 

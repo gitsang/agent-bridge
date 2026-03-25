@@ -3,6 +3,8 @@ package connect
 type Message struct {
 	Message   string `json:"message"`
 	SessionID string `json:"session_id"`
+	Title     string `json:"title,omitempty"`
+	Model     string `json:"model,omitempty"`
 	Workdir   string `json:"workdir,omitempty"`
 	Command   string `json:"command,omitempty"`
 }

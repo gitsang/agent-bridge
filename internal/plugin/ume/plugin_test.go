@@ -26,26 +26,32 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 
 	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
-		handleCount := handleCalls.Add(1)
-		switch handleCount {
-		case 1:
-			if got, want := req.Message, "hi"; got != want {
-				t.Fatalf("first request message = %q, want %q", got, want)
-			}
+		handleCalls.Add(1)
+		switch req.Message {
+		case "hi":
 			if got, want := req.SessionID, ""; got != want {
 				t.Fatalf("first request session = %q, want %q", got, want)
 			}
-			return &connect.Message{Message: "first-reply", SessionID: "ses_created"}, nil
-		case 2:
-			if got, want := req.Message, "follow up"; got != want {
-				t.Fatalf("second request message = %q, want %q", got, want)
-			}
+			return &connect.Message{
+				Message:   "first-reply",
+				SessionID: "ses_created",
+				Title:     "First Title",
+				Workdir:   "/workspace/one",
+				Model:     "openai/gpt-5.4",
+			}, nil
+		case "follow up":
 			if got, want := req.SessionID, "ses_created"; got != want {
 				t.Fatalf("second request session = %q, want %q", got, want)
 			}
-			return &connect.Message{Message: req.SessionID, SessionID: req.SessionID}, nil
+			return &connect.Message{
+				Message:   req.SessionID,
+				SessionID: req.SessionID,
+				Title:     "Follow Up",
+				Workdir:   "/workspace/one",
+				Model:     "openai/gpt-5.4",
+			}, nil
 		default:
-			t.Fatalf("unexpected handle call count: %d", handleCount)
+			t.Fatalf("unexpected request message: %q", req.Message)
 			return nil, nil
 		}
 	})
@@ -63,7 +69,14 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 		t.Fatalf("first response code = %d, want %d", got, want)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{
+	waitForCondition(t, func() bool {
+		plugin.mu.RLock()
+		defer plugin.mu.RUnlock()
+		state := plugin.sessionState["742105222021128192"]
+		return state != nil && state.opencodeSessionID == "ses_created"
+	}, "bind first webhook to opencode session")
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{ 
 		"body":"follow up",
 		"msgId":742841436585590785,
 		"msgType":"text",
@@ -95,11 +108,15 @@ func TestPluginStripsMentionAndReusesSession(t *testing.T) {
 	if got, want := requests[0].Token, "test-token"; got != want {
 		t.Fatalf("first send token = %q, want %q", got, want)
 	}
-	if got, want := requests[0].Payload.Body, "first-reply"; got != want {
-		t.Fatalf("first send body = %q, want %q", got, want)
+	bodies := map[string]bool{}
+	for _, request := range requests {
+		bodies[request.Payload.Body] = true
 	}
-	if got, want := requests[1].Payload.Body, "ses_created"; got != want {
-		t.Fatalf("second send body = %q, want %q", got, want)
+	if !bodies["First Title\n\nfirst-reply\n\n---\n\nDirectory: /workspace/one\nSession: ses_created\nModel: openai/gpt-5.4"] {
+		t.Fatalf("first formatted reply not found in %#v", bodies)
+	}
+	if !bodies["Follow Up\n\nses_created\n\n---\n\nDirectory: /workspace/one\nSession: ses_created\nModel: openai/gpt-5.4"] {
+		t.Fatalf("follow-up formatted reply not found in %#v", bodies)
 	}
 }
 
@@ -114,7 +131,13 @@ func TestPluginIgnoresDuplicateMessageID(t *testing.T) {
 	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
 		handleCalls.Add(1)
-		return &connect.Message{Message: "reply", SessionID: "ses_created"}, nil
+		return &connect.Message{
+			Message:   "reply",
+			SessionID: "ses_created",
+			Title:     "Reply Title",
+			Workdir:   "/workspace/reply",
+			Model:     "openai/gpt-5.4",
+		}, nil
 	})
 
 	body := []byte(`[{
@@ -177,7 +200,13 @@ func TestPluginIgnoresRetriedOlderMessageID(t *testing.T) {
 	var handleCalls atomic.Int32
 	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
 		handleCalls.Add(1)
-		return &connect.Message{Message: req.Message, SessionID: "ses_created"}, nil
+		return &connect.Message{
+			Message:   req.Message,
+			SessionID: "ses_created",
+			Title:     "Retry Title",
+			Workdir:   "/workspace/retry",
+			Model:     "openai/gpt-5.4",
+		}, nil
 	})
 
 	requests := [][]byte{
@@ -212,11 +241,15 @@ func TestPluginIgnoresRetriedOlderMessageID(t *testing.T) {
 	if got, want := len(sent), 2; got != want {
 		t.Fatalf("send requests = %d, want %d", got, want)
 	}
-	if got, want := sent[0].Payload.Body, "first"; got != want {
-		t.Fatalf("first send body = %q, want %q", got, want)
+	bodies := map[string]bool{}
+	for _, request := range sent {
+		bodies[request.Payload.Body] = true
 	}
-	if got, want := sent[1].Payload.Body, "second"; got != want {
-		t.Fatalf("second send body = %q, want %q", got, want)
+	if !bodies["Retry Title\n\nfirst\n\n---\n\nDirectory: /workspace/retry\nSession: ses_created\nModel: openai/gpt-5.4"] {
+		t.Fatalf("first formatted reply not found in %#v", bodies)
+	}
+	if !bodies["Retry Title\n\nsecond\n\n---\n\nDirectory: /workspace/retry\nSession: ses_created\nModel: openai/gpt-5.4"] {
+		t.Fatalf("second formatted reply not found in %#v", bodies)
 	}
 
 	plugin.mu.RLock()
@@ -236,6 +269,22 @@ func TestSanitizeMessageRemovesAtTag(t *testing.T) {
 	input := `<at id="6943cf64f5e6479b808ce93de9c9b47c">Opencode</at> hi`
 	if got, want := sanitizeMessage(input), "hi"; got != want {
 		t.Fatalf("sanitizeMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatReplyUsesRequestedLayout(t *testing.T) {
+	t.Parallel()
+
+	message := &connect.Message{
+		Title:     "Reply Title",
+		Message:   "Reply body",
+		Workdir:   "/workspace/demo",
+		SessionID: "ses_demo",
+		Model:     "openai/gpt-5.4",
+	}
+
+	if got, want := formatReply(message), "Reply Title\n\nReply body\n\n---\n\nDirectory: /workspace/demo\nSession: ses_demo\nModel: openai/gpt-5.4"; got != want {
+		t.Fatalf("formatReply() = %q, want %q", got, want)
 	}
 }
 

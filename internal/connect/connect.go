@@ -65,6 +65,7 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 		return &Message{
 			SessionID: req.SessionID,
 			Message:   listing,
+			Title:     "Sessions",
 			Command:   slashSessions,
 		}, nil
 	}
@@ -99,6 +100,9 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 	return &Message{
 		SessionID: responseSessionID,
 		Message:   result.Reply,
+		Title:     result.Title,
+		Model:     result.Model,
+		Workdir:   result.Workdir,
 	}, nil
 }
 

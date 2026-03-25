@@ -249,7 +249,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				"reply_session_id_present", strings.TrimSpace(resp.SessionID) != "",
 			)
 
-			if err := p.sendReply(context.Background(), token, resp.Message); err != nil {
+			if err := p.sendReply(context.Background(), token, resp); err != nil {
 				replyLogger.Debug("ume reply delivery failed", "error", err)
 				statusCode = http.StatusBadGateway
 				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
@@ -397,7 +397,12 @@ func (p *Plugin) limitSessionStatesLocked(now time.Time) {
 	}
 }
 
-func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
+func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.Message) error {
+	if message == nil {
+		return fmt.Errorf("reply message is required")
+	}
+
+	content := formatReply(message)
 	if strings.TrimSpace(content) == "" {
 		return fmt.Errorf("reply content is required")
 	}
@@ -466,6 +471,28 @@ func (p *Plugin) sendReply(ctx context.Context, token, content string) error {
 	)
 
 	return nil
+}
+
+func formatReply(message *connect.Message) string {
+	title := strings.TrimSpace(message.Title)
+	content := strings.TrimSpace(message.Message)
+	directory := strings.TrimSpace(message.Workdir)
+	sessionID := strings.TrimSpace(message.SessionID)
+	model := strings.TrimSpace(message.Model)
+
+	builder := strings.Builder{}
+	builder.WriteString(title)
+	builder.WriteString("\n\n")
+	builder.WriteString(content)
+	builder.WriteString("\n\n---\n\n")
+	builder.WriteString("Directory: ")
+	builder.WriteString(directory)
+	builder.WriteString("\nSession: ")
+	builder.WriteString(sessionID)
+	builder.WriteString("\nModel: ")
+	builder.WriteString(model)
+
+	return builder.String()
 }
 
 func sanitizeMessage(message string) string {
