@@ -2,74 +2,41 @@ package connect
 
 import "testing"
 
-func TestParseMessagePlain(t *testing.T) {
-	parsed, err := ParseMessage("hello world")
+func TestParseInputPlain(t *testing.T) {
+	parsed, err := ParseInput("hello world")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if parsed.Body != "hello world" {
-		t.Fatalf("unexpected body: %q", parsed.Body)
+	if parsed.Invocation != nil {
+		t.Fatalf("invocation should be nil for plain input")
+	}
+	if got, want := parsed.Content, "hello world"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
 	}
 }
 
-func TestParseMessageDirectiveHead(t *testing.T) {
-	input := "@model:openai/gpt-5.4\n@session:abc123\n\nHi!"
-
-	parsed, err := ParseMessage(input)
+func TestParseInputSlashCommand(t *testing.T) {
+	parsed, err := ParseInput(`/new --model "openai/gpt-5.4" --work-dir '/tmp/demo dir'`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if parsed.ModelCommand != "openai/gpt-5.4" {
-		t.Fatalf("unexpected model: %q", parsed.ModelCommand)
+	if parsed.Invocation == nil {
+		t.Fatalf("invocation is required for slash commands")
 	}
-
-	if parsed.SessionCommand != "abc123" {
-		t.Fatalf("unexpected session: %q", parsed.SessionCommand)
+	if got, want := parsed.Invocation.Positionals[0], "new"; got != want {
+		t.Fatalf("root command = %q, want %q", got, want)
 	}
-
-	if parsed.Body != "Hi!" {
-		t.Fatalf("unexpected body: %q", parsed.Body)
+	if got, want := parsed.Invocation.Flags["model"], "openai/gpt-5.4"; got != want {
+		t.Fatalf("model flag = %q, want %q", got, want)
 	}
-}
-
-func TestParseMessageSlashCommand(t *testing.T) {
-	parsed, err := ParseMessage("/sessions")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if parsed.SlashCommand != "/sessions" {
-		t.Fatalf("unexpected command: %q", parsed.SlashCommand)
+	if got, want := parsed.Invocation.Flags["work-dir"], "/tmp/demo dir"; got != want {
+		t.Fatalf("work-dir flag = %q, want %q", got, want)
 	}
 }
 
-func TestParseMessageDirectiveNotAtHead(t *testing.T) {
-	parsed, err := ParseMessage("Hi\n@model:openai/gpt-5.4")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if parsed.Body != "Hi\n@model:openai/gpt-5.4" {
-		t.Fatalf("unexpected body: %q", parsed.Body)
-	}
-
-	if parsed.ModelCommand != "" {
-		t.Fatalf("model should not be parsed: %q", parsed.ModelCommand)
-	}
-}
-
-func TestParseMessageDuplicateSessionDirective(t *testing.T) {
-	_, err := ParseMessage("@session:abc\n@session:def\n\nhello")
+func TestParseInputInvalidQuote(t *testing.T) {
+	_, err := ParseInput(`/new --work-dir '/tmp/demo`)
 	if err == nil {
-		t.Fatalf("expected duplicate @session error")
-	}
-}
-
-func TestParseMessageDuplicateModelDirective(t *testing.T) {
-	_, err := ParseMessage("@model:openai/gpt-5.4\n@model:anthropic/claude\n\nhello")
-	if err == nil {
-		t.Fatalf("expected duplicate @model error")
+		t.Fatalf("expected unterminated quote error")
 	}
 }

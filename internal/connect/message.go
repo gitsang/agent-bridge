@@ -1,12 +1,20 @@
 package connect
 
 type Message struct {
-	Message   string `json:"message"`
-	SessionID string `json:"session_id"`
+	Content  string          `json:"content"`
+	Chat     ChatContext     `json:"chat,omitempty"`
+	Opencode OpencodeContext `json:"opencode,omitempty"`
+}
+
+type ChatContext struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type OpencodeContext struct {
+	SessionID string `json:"session_id,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Model     string `json:"model,omitempty"`
 	Workdir   string `json:"workdir,omitempty"`
-	Command   string `json:"command,omitempty"`
 }
 
 type Error struct {

@@ -26,7 +26,7 @@ const defaultSendURL = "https://uc.yealink.com:443/linker/robot/send"
 const (
 	messageIDRetention  = 24 * time.Hour
 	maxRecentMessageIDs = 32
-	maxSessionBindings  = 1024
+	maxSessionStates    = 1024
 )
 
 var atTagPattern = regexp.MustCompile(`(?s)<at\b[^>]*>.*?</at>\s*`)
@@ -47,9 +47,8 @@ type Plugin struct {
 }
 
 type chatSessionState struct {
-	opencodeSessionID string
-	recentMessageIDs  map[string]time.Time
-	lastSeenAt        time.Time
+	recentMessageIDs map[string]time.Time
+	lastSeenAt       time.Time
 }
 
 func init() {
@@ -217,46 +216,38 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 
 		go func() {
 			connectReq := connect.Message{
-				Message:   message,
-				SessionID: p.getOpencodeSessionID(chatSessionID),
+				Content: message,
+				Chat: connect.ChatContext{
+					SessionID: chatSessionID,
+				},
 			}
 			replyLogger := p.logger.With(
 				"session_id", chatSessionID,
 				"msg_id", msgID,
 				"request_message_length", len(message),
-				"opencode_session_id", strings.TrimSpace(connectReq.SessionID),
+				"opencode_session_id", strings.TrimSpace(connectReq.Opencode.SessionID),
 			)
 			resp, err := handle(context.Background(), &connectReq)
 			if err != nil {
 				replyLogger.Debug("ume reply handler failed", "error", err)
-				status := http.StatusBadGateway
 				var connectError *connect.Error
 				if errors.As(err, &connectError) {
-					status = connectError.StatusCode
+					replyLogger.Debug("ume reply handler connect error", "status_code", connectError.StatusCode)
 				}
-				statusCode = status
-				writeJSON(w, status, map[string]any{"error": err.Error()})
 				return
 			}
 
-			if strings.TrimSpace(resp.SessionID) != "" {
-				p.setOpencodeSessionID(chatSessionID, resp.SessionID)
-				replyLogger = replyLogger.With("reply_session_id", strings.TrimSpace(resp.SessionID))
-			}
-
 			replyLogger.Debug("ume reply handler succeeded",
-				"reply_message_length", len(resp.Message),
-				"reply_session_id_present", strings.TrimSpace(resp.SessionID) != "",
+				"reply_message_length", len(resp.Content),
+				"reply_session_id_present", strings.TrimSpace(resp.Opencode.SessionID) != "",
 			)
 
 			if err := p.sendReply(context.Background(), token, resp); err != nil {
 				replyLogger.Debug("ume reply delivery failed", "error", err)
-				statusCode = http.StatusBadGateway
-				writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 				return
 			}
 
-			replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Message))
+			replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Content))
 		}()
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -265,39 +256,6 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 	})
 
 	return mux
-}
-
-func (p *Plugin) getOpencodeSessionID(chatSessionID string) string {
-	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
-	if resolvedChatSessionID == "" {
-		return ""
-	}
-
-	now := time.Now()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.cleanupExpiredSessionsLocked(now)
-	state, ok := p.sessionState[resolvedChatSessionID]
-	if !ok {
-		return ""
-	}
-	state.lastSeenAt = now
-	return strings.TrimSpace(state.opencodeSessionID)
-}
-
-func (p *Plugin) setOpencodeSessionID(chatSessionID, opencodeSessionID string) {
-	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
-	resolvedOpencodeSessionID := strings.TrimSpace(opencodeSessionID)
-	if resolvedChatSessionID == "" || resolvedOpencodeSessionID == "" {
-		return
-	}
-
-	now := time.Now()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.cleanupExpiredSessionsLocked(now)
-	state := p.ensureSessionStateLocked(resolvedChatSessionID, now)
-	state.opencodeSessionID = resolvedOpencodeSessionID
 }
 
 func (p *Plugin) markDuplicate(chatSessionID, msgID string) bool {
@@ -344,7 +302,7 @@ func (p *Plugin) cleanupExpiredSessionsLocked(now time.Time) {
 			continue
 		}
 		p.cleanupExpiredMessageIDsLocked(state, now)
-		if state.opencodeSessionID == "" && len(state.recentMessageIDs) == 0 {
+		if len(state.recentMessageIDs) == 0 {
 			delete(p.sessionState, chatSessionID)
 		}
 	}
@@ -376,7 +334,7 @@ func (p *Plugin) limitRecentMessageIDsLocked(state *chatSessionState) {
 }
 
 func (p *Plugin) limitSessionStatesLocked(now time.Time) {
-	if len(p.sessionState) < maxSessionBindings {
+	if len(p.sessionState) < maxSessionStates {
 		return
 	}
 
@@ -474,11 +432,11 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.M
 }
 
 func formatReply(message *connect.Message) string {
-	title := strings.TrimSpace(message.Title)
-	content := strings.TrimSpace(message.Message)
-	directory := strings.TrimSpace(message.Workdir)
-	sessionID := strings.TrimSpace(message.SessionID)
-	model := strings.TrimSpace(message.Model)
+	title := strings.TrimSpace(message.Opencode.Title)
+	content := strings.TrimSpace(message.Content)
+	directory := strings.TrimSpace(message.Opencode.Workdir)
+	sessionID := strings.TrimSpace(message.Opencode.SessionID)
+	model := strings.TrimSpace(message.Opencode.Model)
 
 	builder := strings.Builder{}
 	builder.WriteString(title)

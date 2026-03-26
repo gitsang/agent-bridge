@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,37 @@ type Options struct {
 	Timeout  time.Duration
 }
 
+type PromptRequest struct {
+	SessionID string
+	Content   string
+	Model     string
+	Workdir   string
+}
+
+type CreateSessionRequest struct {
+	Title   string
+	Workdir string
+}
+
+type PromptResult struct {
+	Reply     string
+	SessionID string
+	Title     string
+	Workdir   string
+	Model     string
+}
+
+type ModelInfo struct {
+	ProviderID string
+	ModelID    string
+	Name       string
+}
+
+type Client struct {
+	client  *ocsdk.Client
+	timeout time.Duration
+}
+
 func WithAuthentication(username, password string) Option {
 	return func(target *Options) {
 		target.Username = username
@@ -36,23 +68,8 @@ func WithTimeout(timeout time.Duration) Option {
 	}
 }
 
-type PromptResult struct {
-	Reply             string
-	OpencodeSessionID string
-	Title             string
-	Workdir           string
-	Model             string
-}
-
-type Client struct {
-	client  *ocsdk.Client
-	timeout time.Duration
-}
-
 func NewClient(baseURL string, options ...Option) *Client {
-	resolved := Options{
-		Timeout: 10 * time.Minute,
-	}
+	resolved := Options{Timeout: 10 * time.Minute}
 
 	for _, apply := range options {
 		if apply == nil {
@@ -74,19 +91,19 @@ func NewClient(baseURL string, options ...Option) *Client {
 	}
 
 	sdkClient := ocsdk.NewClient(sdkOptions...)
-
-	return &Client{
-		client:  sdkClient,
-		timeout: timeout,
-	}
+	return &Client{client: sdkClient, timeout: timeout}
 }
 
-func (c *Client) ListSessions(ctx context.Context) ([]ocsdk.Session, error) {
-	resp, err := c.client.Session.List(ctx, ocsdk.SessionListParams{})
+func (c *Client) ListSessions(ctx context.Context, workdir string) ([]ocsdk.Session, error) {
+	params := ocsdk.SessionListParams{}
+	if strings.TrimSpace(workdir) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	}
+
+	resp, err := c.client.Session.List(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-
 	if resp == nil {
 		return []ocsdk.Session{}, nil
 	}
@@ -94,24 +111,78 @@ func (c *Client) ListSessions(ctx context.Context) ([]ocsdk.Session, error) {
 	return *resp, nil
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionId string) (*ocsdk.Session, error) {
-	if strings.TrimSpace(sessionId) == "" {
+func (c *Client) ListModels(ctx context.Context, workdir string) ([]ModelInfo, error) {
+	params := ocsdk.AppProvidersParams{}
+	if strings.TrimSpace(workdir) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	}
+
+	resp, err := c.client.App.Providers(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return []ModelInfo{}, nil
+	}
+
+	models := make([]ModelInfo, 0)
+	for _, provider := range resp.Providers {
+		providerID := strings.TrimSpace(provider.ID)
+		for modelID, model := range provider.Models {
+			resolvedModelID := strings.TrimSpace(model.ID)
+			if resolvedModelID == "" {
+				resolvedModelID = strings.TrimSpace(modelID)
+			}
+			if resolvedModelID == "" || providerID == "" {
+				continue
+			}
+			models = append(models, ModelInfo{
+				ProviderID: providerID,
+				ModelID:    resolvedModelID,
+				Name:       strings.TrimSpace(model.Name),
+			})
+		}
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		if models[i].ProviderID == models[j].ProviderID {
+			return models[i].ModelID < models[j].ModelID
+		}
+		return models[i].ProviderID < models[j].ProviderID
+	})
+
+	return models, nil
+}
+
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*ocsdk.Session, error) {
+	resolvedSessionID := strings.TrimSpace(sessionID)
+	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
 	}
 
-	return c.client.Session.Get(ctx, sessionId, ocsdk.SessionGetParams{})
+	return c.client.Session.Get(ctx, resolvedSessionID, ocsdk.SessionGetParams{})
 }
 
-func (c *Client) CreateSession(ctx context.Context) (*ocsdk.Session, error) {
-	return c.client.Session.New(ctx, ocsdk.SessionNewParams{})
+func (c *Client) CreateSession(ctx context.Context, request CreateSessionRequest) (*ocsdk.Session, error) {
+	params := ocsdk.SessionNewParams{}
+	if strings.TrimSpace(request.Workdir) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(request.Workdir))
+	}
+	if strings.TrimSpace(request.Title) != "" {
+		params.Title = ocsdk.F(strings.TrimSpace(request.Title))
+	}
+
+	return c.client.Session.New(ctx, params)
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionId string, message string) (*PromptResult, error) {
-	if sessionId == "" {
+func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptResult, error) {
+	resolvedSessionID := strings.TrimSpace(request.SessionID)
+	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
 	}
-	if strings.TrimSpace(message) == "" {
-		return nil, fmt.Errorf("message is required")
+	resolvedContent := strings.TrimSpace(request.Content)
+	if resolvedContent == "" {
+		return nil, fmt.Errorf("message content is required")
 	}
 
 	promptCtx, promptCancel := context.WithTimeout(ctx, c.timeout)
@@ -120,43 +191,98 @@ func (c *Client) Prompt(ctx context.Context, sessionId string, message string) (
 	parts := []ocsdk.SessionPromptParamsPartUnion{
 		ocsdk.TextPartInputParam{
 			Type: ocsdk.F(ocsdk.TextPartInputTypeText),
-			Text: ocsdk.F(message),
+			Text: ocsdk.F(resolvedContent),
 		},
 	}
 
-	params := ocsdk.SessionPromptParams{
-		Parts: ocsdk.F(parts),
+	params := ocsdk.SessionPromptParams{Parts: ocsdk.F(parts)}
+	resolvedWorkdir := strings.TrimSpace(request.Workdir)
+	if resolvedWorkdir != "" {
+		params.Directory = ocsdk.F(resolvedWorkdir)
 	}
 
-	resp, err := c.client.Session.Prompt(promptCtx, sessionId, params)
+	resolvedModel := strings.TrimSpace(request.Model)
+	if resolvedModel != "" {
+		providerID, modelID, err := c.resolveModel(promptCtx, resolvedModel, resolvedWorkdir)
+		if err != nil {
+			return nil, err
+		}
+		params.Model = ocsdk.F(ocsdk.SessionPromptParamsModel{
+			ProviderID: ocsdk.F(providerID),
+			ModelID:    ocsdk.F(modelID),
+		})
+	}
+
+	resp, err := c.client.Session.Prompt(promptCtx, resolvedSessionID, params)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvedSessionID := strings.TrimSpace(resp.Info.SessionID)
-	if resolvedSessionID == "" {
-		resolvedSessionID = strings.TrimSpace(sessionId)
+	resultSessionID := strings.TrimSpace(resp.Info.SessionID)
+	if resultSessionID == "" {
+		resultSessionID = resolvedSessionID
 	}
 
 	result := &PromptResult{
-		Reply:             extractReply(resp.Parts),
-		OpencodeSessionID: resolvedSessionID,
-		Model:             strings.TrimSpace(resp.Info.ModelID),
+		Reply:     extractReply(resp.Parts),
+		SessionID: resultSessionID,
+		Model:     strings.TrimSpace(resp.Info.ModelID),
+		Workdir:   resolvedWorkdir,
 	}
 
-	if resolvedSessionID == "" {
+	if resultSessionID == "" {
 		return result, nil
 	}
 
-	session, err := c.client.Session.Get(promptCtx, resolvedSessionID, ocsdk.SessionGetParams{})
+	session, err := c.client.Session.Get(promptCtx, resultSessionID, ocsdk.SessionGetParams{})
 	if err != nil || session == nil {
 		return result, nil
 	}
 
 	result.Title = strings.TrimSpace(session.Title)
-	result.Workdir = strings.TrimSpace(session.Directory)
+	if strings.TrimSpace(session.Directory) != "" {
+		result.Workdir = strings.TrimSpace(session.Directory)
+	}
 
 	return result, nil
+}
+
+func (c *Client) resolveModel(ctx context.Context, model string, workdir string) (string, string, error) {
+	resolvedModel := strings.TrimSpace(model)
+	if resolvedModel == "" {
+		return "", "", fmt.Errorf("model is required")
+	}
+
+	if strings.Contains(resolvedModel, "/") {
+		pair := strings.SplitN(resolvedModel, "/", 2)
+		providerID := strings.TrimSpace(pair[0])
+		modelID := strings.TrimSpace(pair[1])
+		if providerID == "" || modelID == "" {
+			return "", "", fmt.Errorf("invalid model format: %s", resolvedModel)
+		}
+		return providerID, modelID, nil
+	}
+
+	models, err := c.ListModels(ctx, workdir)
+	if err != nil {
+		return "", "", err
+	}
+
+	matches := make([]ModelInfo, 0, 4)
+	for _, candidate := range models {
+		if strings.EqualFold(strings.TrimSpace(candidate.ModelID), resolvedModel) {
+			matches = append(matches, candidate)
+		}
+	}
+
+	if len(matches) == 0 {
+		return "", "", fmt.Errorf("model not found: %s", resolvedModel)
+	}
+	if len(matches) > 1 {
+		return "", "", fmt.Errorf("ambiguous model %s, use provider/model", resolvedModel)
+	}
+
+	return strings.TrimSpace(matches[0].ProviderID), strings.TrimSpace(matches[0].ModelID), nil
 }
 
 func extractReply(parts []ocsdk.Part) string {
