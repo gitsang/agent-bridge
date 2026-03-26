@@ -2,33 +2,11 @@
 
 An opencode plugin for connecting opencode to chat application
 
-## Features
-
-- Configurable opencode server `base_url` and password header
-- Plugin-based integration entry (`plugins.<instance>.<type>`)
-- `opencode-connect` core owns slash-command parsing, conversation binding, and prompt invocation
-- Plugin owns chat transport adaptation (decode, dedupe, delivery)
-- ChatAPI plugin provides an OpenAI-compatible `POST /chat/completions` endpoint via `Serve(handle)`
-- UME plugin provides a webhook endpoint that strips `<at ...>...</at>` mentions, de-duplicates repeated `msgId`, and binds `sessionId` to opencode sessions in memory
-- In-memory mapping from chat `session_id` to opencode session
-- Slash commands:
-  - `/new [--model <provider/model|model>] [--work-dir <path>] [--title <title>]`
-  - `/session attach <opencode-session-id>`
-  - `/session detach`
-  - `/session current`
-  - `/session list [--work-dir <path>]`
-  - `/model set <provider/model|model>`
-  - `/model list`
-  - `/workdir set <path>`
-  - `/help [new|session|model|workdir]`
-
 ## Plugins
 
 我们使用插件的形式来实现不同聊天软件的集成。
 
-插件的职责只有：**传递消息**
-
-负责建立通讯软件与 Connect 之间的桥梁，负责数据转换等工作。
+使用明确的职责区分，插件的职责只有：**传递消息**，负责建立通讯软件与 Connect 之间的桥梁。
 
 ### 接口
 
@@ -56,11 +34,28 @@ func (p *MyPlugin) Serve(ctx context.Context, handle plugin.HandleFunc) error {
 }
 ```
 
+### 支持列表
+
+- [x] OpenAI-compatible Chat Completions 接口
+- [x] UME 自定义机器人
+
+## Slash commands
+
+- `/new [--model <provider/model|model>] [--work-dir <path>] [--title <title>]`
+- `/session attach <opencode-session-id>`
+- `/session detach`
+- `/session current`
+- `/session list [--work-dir <path>]`
+- `/model set <provider/model|model>`
+- `/model list`
+- `/workdir set <path>`
+- `/help [new|session|model|workdir]`
+
 ## Contribute
 
 ## TODO List
 
+- [x] 支持 Message 命令列表
 - [ ] 支持 SO 插件
-- [ ] 统一和完善 Message 命令列表
 - [ ] 完善部署和使用教程
 - [ ] 支持 ACP 协议对接 claude code 等 agent
