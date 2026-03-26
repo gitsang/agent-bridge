@@ -34,12 +34,13 @@ func (p *MyPlugin) Serve(ctx context.Context, handle plugin.HandleFunc) error {
 }
 ```
 
-### 支持列表
+### Supports
 
-- [x] OpenAI-compatible Chat Completions 接口
-- [x] UME 自定义机器人
+- [x] OpenAI-compatible Chat Completions API
+- [ ] Mattermost
+- [ ] Slack
 
-## Slash commands
+## Slash commands:
 
 - `/new [--model <provider/model|model>] [--work-dir <path>] [--title <title>]`
 - `/session attach <opencode-session-id>`
