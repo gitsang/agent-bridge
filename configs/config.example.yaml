@@ -14,7 +14,6 @@ plugins:
   openai-compatible:
     openai-compatible:
       listen: ":8192"
-
   ume:
     ume:
       listen: ":8193"
