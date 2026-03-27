@@ -115,6 +115,22 @@ func TestHandleModelSetCommand(t *testing.T) {
 	}
 }
 
+func TestHandleCommandErrorReturnsMessage(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryConversationStore(0, 0)
+	client := &fakeSessionClient{getErr: fmt.Errorf("connection failed")}
+	connector := New(WithOpencodeClient(client), WithConversationStore(store))
+
+	resp, err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_missing", Chat: ChatContext{SessionID: "chat-1"}})
+	if err != nil {
+		t.Fatalf("Handle() should not return error, got: %v", err)
+	}
+	if got, want := resp.Content, "Error: session not found: ses_missing"; got != want {
+		t.Fatalf("error message = %q, want %q", got, want)
+	}
+}
+
 func TestHandleRequiresOpencodeClient(t *testing.T) {
 	t.Parallel()
 

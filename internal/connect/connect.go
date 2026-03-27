@@ -71,7 +71,11 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 	if parsed.Invocation != nil {
 		resp, err := c.handleCommand(ctx, req, parsed.Invocation)
 		if err != nil {
-			return nil, err
+			// Return error as message content instead of HTTP error
+			return &Message{
+				Content: fmt.Sprintf("Error: %s", err.Error()),
+				Chat:    req.Chat,
+			}, nil
 		}
 		if resp.Chat.SessionID == "" {
 			resp.Chat = req.Chat
