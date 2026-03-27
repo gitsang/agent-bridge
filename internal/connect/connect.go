@@ -687,7 +687,7 @@ func formatModelInfo(providerID, modelID, mode string) string {
 		parts = append(parts, strings.TrimSpace(modelID))
 	}
 	if strings.TrimSpace(mode) != "" {
-		parts = append(parts, fmt.Sprintf("(%s)", strings.TrimSpace(mode)))
+		parts = append(parts, fmt.Sprintf("[%s]", strings.TrimSpace(mode)))
 	}
 	return strings.Join(parts, " ")
 }
