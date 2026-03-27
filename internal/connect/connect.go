@@ -13,6 +13,7 @@ import (
 type sessionClient interface {
 	ListSessions(ctx context.Context, workdir string) ([]opencode.Session, error)
 	ListModels(ctx context.Context, workdir string) ([]opencode.ModelInfo, error)
+	ListAgents(ctx context.Context, workdir string) ([]opencode.AgentInfo, error)
 	GetSession(ctx context.Context, sessionID string) (*opencode.Session, error)
 	GetSessionMessages(ctx context.Context, sessionID string) ([]opencode.SessionMessage, error)
 	CreateSession(ctx context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error)
@@ -93,6 +94,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 
 	resolvedWorkdir := firstNonEmpty(strings.TrimSpace(req.Opencode.Workdir), strings.TrimSpace(state.DefaultWorkdir))
 	resolvedModel := firstNonEmpty(strings.TrimSpace(req.Opencode.Model), strings.TrimSpace(state.DefaultModel))
+	resolvedAgent := firstNonEmpty(strings.TrimSpace(req.Opencode.Agent), strings.TrimSpace(state.DefaultAgent))
 	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Opencode.SessionID), strings.TrimSpace(state.OpencodeSessionID))
 
 	if resolvedSessionID == "" {
@@ -113,6 +115,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		SessionID: resolvedSessionID,
 		Content:   content,
 		Model:     resolvedModel,
+		Agent:     resolvedAgent,
 		Workdir:   resolvedWorkdir,
 	})
 	if err != nil {
@@ -131,6 +134,9 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		if resolvedModel != "" {
 			c.conversationStore.SetDefaultModel(resolvedChatSessionID, resolvedModel)
 		}
+		if resolvedAgent != "" {
+			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
+		}
 		if resolvedWorkdir != "" {
 			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
 		}
@@ -146,6 +152,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 			SessionID: responseSessionID,
 			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Opencode.Title)),
 			Model:     firstNonEmpty(formatModelInfo(result.ProviderID, result.ModelID, result.Mode), resolvedModel),
+			Agent:     resolvedAgent,
 			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),
 		},
 	}
@@ -175,6 +182,8 @@ func (c *OpencodeConnect) handleCommand(ctx context.Context, req *Message, invoc
 		return &Message{Content: listing, Chat: req.Chat}, nil
 	case "model":
 		return c.handleModelCommand(ctx, req, invocation)
+	case "agent":
+		return c.handleAgentCommand(ctx, req, invocation)
 	case "workdir":
 		return c.handleWorkdirCommand(req, invocation)
 	case "help":
@@ -187,6 +196,7 @@ func (c *OpencodeConnect) handleCommand(ctx context.Context, req *Message, invoc
 func (c *OpencodeConnect) handleNewCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
 	workdir := strings.TrimSpace(invocation.Flags["work-dir"])
 	model := strings.TrimSpace(invocation.Flags["model"])
+	agent := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
 	createdSession, err := c.opencodeClient.CreateSession(ctx, opencode.CreateSessionRequest{Title: title, Workdir: workdir})
@@ -203,6 +213,9 @@ func (c *OpencodeConnect) handleNewCommand(ctx context.Context, req *Message, in
 		if model != "" {
 			c.conversationStore.SetDefaultModel(resolvedChatSessionID, model)
 		}
+		if agent != "" {
+			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, agent)
+		}
 		if workdir != "" {
 			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, workdir)
 		}
@@ -215,6 +228,7 @@ func (c *OpencodeConnect) handleNewCommand(ctx context.Context, req *Message, in
 			SessionID: strings.TrimSpace(createdSession.ID),
 			Title:     firstNonEmpty(strings.TrimSpace(createdSession.Title), title),
 			Model:     model,
+			Agent:     agent,
 			Workdir:   firstNonEmpty(strings.TrimSpace(createdSession.Directory), workdir),
 		},
 	}, nil
@@ -404,6 +418,39 @@ func (c *OpencodeConnect) handleModelCommand(ctx context.Context, req *Message, 
 	}
 }
 
+func (c *OpencodeConnect) handleAgentCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
+	if len(invocation.Positionals) < 2 {
+		return nil, NewError(http.StatusBadRequest, "agent subcommand is required")
+	}
+
+	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
+	subcommand := strings.ToLower(strings.TrimSpace(invocation.Positionals[1]))
+
+	switch subcommand {
+	case "set":
+		if resolvedChatSessionID == "" {
+			return nil, NewError(http.StatusBadRequest, "chat session id is required for /agent set")
+		}
+		if len(invocation.Positionals) < 3 {
+			return nil, NewError(http.StatusBadRequest, "agent is required")
+		}
+		resolvedAgent := strings.TrimSpace(invocation.Positionals[2])
+		if resolvedAgent == "" {
+			return nil, NewError(http.StatusBadRequest, "agent is required")
+		}
+		c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
+		return &Message{Content: fmt.Sprintf("Default agent set to %s", resolvedAgent), Chat: req.Chat, Opencode: OpencodeContext{Agent: resolvedAgent}}, nil
+	case "list":
+		agents, err := c.listAgents(ctx, c.resolveWorkdirForList(req))
+		if err != nil {
+			return nil, NewError(http.StatusBadGateway, err.Error())
+		}
+		return &Message{Content: agents, Chat: req.Chat}, nil
+	default:
+		return nil, NewError(http.StatusBadRequest, fmt.Sprintf("unsupported agent command: %s", subcommand))
+	}
+}
+
 func (c *OpencodeConnect) handleWorkdirCommand(req *Message, invocation *Invocation) (*Message, error) {
 	if len(invocation.Positionals) < 2 {
 		return nil, NewError(http.StatusBadRequest, "workdir subcommand is required")
@@ -528,16 +575,46 @@ func (c *OpencodeConnect) listModels(ctx context.Context, workdir string) (strin
 	return strings.TrimSpace(builder.String()), nil
 }
 
+func (c *OpencodeConnect) listAgents(ctx context.Context, workdir string) (string, error) {
+	agents, err := c.opencodeClient.ListAgents(ctx, strings.TrimSpace(workdir))
+	if err != nil {
+		return "", err
+	}
+	if len(agents) == 0 {
+		return "- (no agents)", nil
+	}
+
+	builder := strings.Builder{}
+	for _, agent := range agents {
+		builder.WriteString("- ")
+		builder.WriteString(strings.TrimSpace(agent.Name))
+		if strings.TrimSpace(agent.Mode) != "" {
+			builder.WriteString(" (")
+			builder.WriteString(strings.TrimSpace(agent.Mode))
+			builder.WriteString(")")
+		}
+		if strings.TrimSpace(agent.Description) != "" {
+			builder.WriteString(": ")
+			builder.WriteString(strings.TrimSpace(agent.Description))
+		}
+		builder.WriteString("\n")
+	}
+
+	return strings.TrimSpace(builder.String()), nil
+}
+
 func (c *OpencodeConnect) helpText(invocation *Invocation) string {
 	if invocation != nil && len(invocation.Positionals) > 1 {
 		topic := strings.ToLower(strings.TrimSpace(invocation.Positionals[1]))
 		switch topic {
 		case "new":
-			return "Usage: /new [--model <provider/model|model>] [--work-dir <path>] [--title <title>]"
+			return "Usage: /new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]"
 		case "session":
 			return "Usage: /session <attach|detach|current|list> [args] [--work-dir <path>]"
 		case "model":
 			return "Usage: /model <set|list> [model]"
+		case "agent":
+			return "Usage: /agent <set|list> [name]"
 		case "workdir":
 			return "Usage: /workdir set <path>"
 		}
@@ -545,15 +622,17 @@ func (c *OpencodeConnect) helpText(invocation *Invocation) string {
 
 	return strings.Join([]string{
 		"Available commands:",
-		"- /new [--model <provider/model|model>] [--work-dir <path>] [--title <title>]",
+		"- /new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]",
 		"- /session attach <opencode-session-id>",
 		"- /session detach",
 		"- /session current",
 		"- /session list [--work-dir <path>]",
 		"- /model set <provider/model|model>",
 		"- /model list",
+		"- /agent set <name>",
+		"- /agent list",
 		"- /workdir set <path>",
-		"- /help [new|session|model|workdir]",
+		"- /help [new|session|model|agent|workdir]",
 	}, "\n")
 }
 
@@ -583,6 +662,12 @@ func formatCurrentState(state ConversationState) string {
 		builder.WriteString("(none)")
 	} else {
 		builder.WriteString(strings.TrimSpace(state.DefaultModel))
+	}
+	builder.WriteString("\n- default agent: ")
+	if strings.TrimSpace(state.DefaultAgent) == "" {
+		builder.WriteString("(none)")
+	} else {
+		builder.WriteString(strings.TrimSpace(state.DefaultAgent))
 	}
 	builder.WriteString("\n- default workdir: ")
 	if strings.TrimSpace(state.DefaultWorkdir) == "" {

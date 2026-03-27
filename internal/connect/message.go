@@ -14,6 +14,7 @@ type OpencodeContext struct {
 	SessionID string `json:"session_id,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Model     string `json:"model,omitempty"`
+	Agent     string `json:"agent,omitempty"`
 	Workdir   string `json:"workdir,omitempty"`
 }
 

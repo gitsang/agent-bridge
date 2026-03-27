@@ -22,4 +22,4 @@ opencode:
   baseurl: "http://127.0.0.1:4096"
   username: ""
   password: ""
-  timeout: 10m
+  timeout: 0s

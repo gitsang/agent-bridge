@@ -16,6 +16,7 @@ type ConversationState struct {
 	ChatSessionID     string
 	OpencodeSessionID string
 	DefaultModel      string
+	DefaultAgent      string
 	DefaultWorkdir    string
 	LastProviderID    string
 	LastModelID       string
@@ -28,6 +29,7 @@ type ConversationStore interface {
 	Get(chatSessionID string) (ConversationState, bool)
 	PutBinding(chatSessionID string, opencodeSessionID string)
 	SetDefaultModel(chatSessionID string, model string)
+	SetDefaultAgent(chatSessionID string, agent string)
 	SetDefaultWorkdir(chatSessionID string, workdir string)
 	SetLastModelInfo(chatSessionID string, providerID, modelID, mode string)
 	Delete(chatSessionID string)
@@ -36,10 +38,10 @@ type ConversationStore interface {
 }
 
 type MemoryConversationStore struct {
-	mu           sync.RWMutex
+	mu            sync.RWMutex
 	conversations map[string]ConversationState
-	ttl          time.Duration
-	maxItems     int
+	ttl           time.Duration
+	maxItems      int
 }
 
 func NewMemoryConversationStore(ttl time.Duration, maxItems int) *MemoryConversationStore {
@@ -113,6 +115,22 @@ func (s *MemoryConversationStore) SetDefaultModel(chatSessionID string, model st
 	s.cleanupExpiredLocked(now)
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.DefaultModel = strings.TrimSpace(model)
+	state.LastSeenAt = now
+	s.conversations[resolvedChatSessionID] = state
+}
+
+func (s *MemoryConversationStore) SetDefaultAgent(chatSessionID string, agent string) {
+	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
+	if resolvedChatSessionID == "" {
+		return
+	}
+
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
+	state := s.ensureStateLocked(resolvedChatSessionID, now)
+	state.DefaultAgent = strings.TrimSpace(agent)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 }

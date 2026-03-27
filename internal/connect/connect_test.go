@@ -170,6 +170,94 @@ func TestHandleModelSetCommand(t *testing.T) {
 	}
 }
 
+func TestHandleAgentSetCommand(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryConversationStore(0, 0)
+	client := &fakeSessionClient{}
+	connector := New(WithOpencodeClient(client), WithConversationStore(store))
+
+	_, err := connector.Handle(context.Background(), &Message{Content: "/agent set quick", Chat: ChatContext{SessionID: "chat-1"}})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	state, ok := store.Get("chat-1")
+	if !ok {
+		t.Fatalf("conversation state missing")
+	}
+	if got, want := state.DefaultAgent, "quick"; got != want {
+		t.Fatalf("default agent = %q, want %q", got, want)
+	}
+}
+
+func TestHandleAgentListCommand(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeSessionClient{
+		listAgents: []opencode.AgentInfo{
+			{Name: "build", Mode: "subagent", Description: "Build code"},
+			{Name: "quick", Mode: "subagent"},
+		},
+	}
+	connector := New(WithOpencodeClient(client))
+
+	resp, err := connector.Handle(context.Background(), &Message{Content: "/agent list"})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if got, want := resp.Content, "- build (subagent): Build code\n- quick (subagent)"; got != want {
+		t.Fatalf("response content = %q, want %q", got, want)
+	}
+}
+
+func TestHandleNewCommandWithAgentFlag(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryConversationStore(0, 0)
+	client := &fakeSessionClient{createdSession: &opencode.Session{ID: "ses_created", Title: "Created", Directory: "/repo/created"}}
+	connector := New(WithOpencodeClient(client), WithConversationStore(store))
+
+	resp, err := connector.Handle(context.Background(), &Message{Content: "/new --agent build", Chat: ChatContext{SessionID: "chat-1"}})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	if got, want := resp.Opencode.Agent, "build"; got != want {
+		t.Fatalf("response agent = %q, want %q", got, want)
+	}
+	state, ok := store.Get("chat-1")
+	if !ok {
+		t.Fatalf("conversation state missing")
+	}
+	if got, want := state.DefaultAgent, "build"; got != want {
+		t.Fatalf("default agent = %q, want %q", got, want)
+	}
+}
+
+func TestHandleUsesConversationDefaultAgentForPrompt(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryConversationStore(0, 0)
+	store.PutBinding("chat-1", "ses_bound")
+	store.SetDefaultAgent("chat-1", "quick")
+
+	client := &fakeSessionClient{promptResult: &opencode.PromptResult{Reply: "ok", SessionID: "ses_bound"}}
+	connector := New(WithOpencodeClient(client), WithConversationStore(store))
+
+	resp, err := connector.Handle(context.Background(), &Message{Content: "hello", Chat: ChatContext{SessionID: "chat-1"}})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	if got, want := client.promptRequest.Agent, "quick"; got != want {
+		t.Fatalf("Prompt() agent = %q, want %q", got, want)
+	}
+	if got, want := resp.Opencode.Agent, "quick"; got != want {
+		t.Fatalf("response agent = %q, want %q", got, want)
+	}
+}
+
 func TestHandleCommandErrorReturnsMessage(t *testing.T) {
 	t.Parallel()
 
@@ -200,18 +288,19 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 }
 
 type fakeSessionClient struct {
-	promptResult      *opencode.PromptResult
-	createdSession    *opencode.Session
-	listSessions      []opencode.Session
-	listModels        []opencode.ModelInfo
-	getSession        *opencode.Session
+	promptResult       *opencode.PromptResult
+	createdSession     *opencode.Session
+	listSessions       []opencode.Session
+	listModels         []opencode.ModelInfo
+	listAgents         []opencode.AgentInfo
+	getSession         *opencode.Session
 	getSessionMessages []opencode.SessionMessage
-	getErr            error
-	createErr         error
-	promptErr         error
-	getSessionID      string
-	promptRequest     opencode.PromptRequest
-	createRequest     opencode.CreateSessionRequest
+	getErr             error
+	createErr          error
+	promptErr          error
+	getSessionID       string
+	promptRequest      opencode.PromptRequest
+	createRequest      opencode.CreateSessionRequest
 }
 
 func (f *fakeSessionClient) ListSessions(context.Context, string) ([]opencode.Session, error) {
@@ -220,6 +309,10 @@ func (f *fakeSessionClient) ListSessions(context.Context, string) ([]opencode.Se
 
 func (f *fakeSessionClient) ListModels(context.Context, string) ([]opencode.ModelInfo, error) {
 	return f.listModels, nil
+}
+
+func (f *fakeSessionClient) ListAgents(context.Context, string) ([]opencode.AgentInfo, error) {
+	return f.listAgents, nil
 }
 
 func (f *fakeSessionClient) GetSession(_ context.Context, sessionID string) (*opencode.Session, error) {

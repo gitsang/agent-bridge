@@ -26,6 +26,7 @@ type PromptRequest struct {
 	SessionID string
 	Content   string
 	Model     string
+	Agent     string
 	Workdir   string
 }
 
@@ -59,10 +60,18 @@ type ModelInfo struct {
 	Name       string
 }
 
+type AgentInfo struct {
+	Name        string
+	Description string
+	Mode        string
+}
+
 type Client struct {
 	client  *ocsdk.Client
 	timeout time.Duration
 }
+
+const promptPollInterval = 2 * time.Second
 
 func WithAuthentication(username, password string) Option {
 	return func(target *Options) {
@@ -73,7 +82,7 @@ func WithAuthentication(username, password string) Option {
 
 func WithTimeout(timeout time.Duration) Option {
 	return func(target *Options) {
-		if timeout > 0 {
+		if timeout >= 0 {
 			target.Timeout = timeout
 		}
 	}
@@ -90,7 +99,7 @@ func NewClient(baseURL string, options ...Option) *Client {
 	}
 
 	timeout := resolved.Timeout
-	if timeout <= 0 {
+	if timeout < 0 {
 		timeout = 10 * time.Minute
 	}
 
@@ -165,6 +174,40 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]ModelInfo, e
 	return models, nil
 }
 
+func (c *Client) ListAgents(ctx context.Context, workdir string) ([]AgentInfo, error) {
+	params := ocsdk.AgentListParams{}
+	if strings.TrimSpace(workdir) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	}
+
+	resp, err := c.client.Agent.List(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return []AgentInfo{}, nil
+	}
+
+	agents := make([]AgentInfo, 0, len(*resp))
+	for _, item := range *resp {
+		resolvedName := strings.TrimSpace(item.Name)
+		if resolvedName == "" {
+			continue
+		}
+		agents = append(agents, AgentInfo{
+			Name:        resolvedName,
+			Description: strings.TrimSpace(item.Description),
+			Mode:        strings.TrimSpace(string(item.Mode)),
+		})
+	}
+
+	sort.Slice(agents, func(i, j int) bool {
+		return agents[i].Name < agents[j].Name
+	})
+
+	return agents, nil
+}
+
 func (c *Client) GetSession(ctx context.Context, sessionID string) (*ocsdk.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
@@ -224,8 +267,14 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptResu
 		return nil, fmt.Errorf("message content is required")
 	}
 
-	promptCtx, promptCancel := context.WithTimeout(ctx, c.timeout)
+	promptCtx := ctx
+	var promptCancel context.CancelFunc = func() {}
+	if c.timeout > 0 {
+		promptCtx, promptCancel = context.WithTimeout(ctx, c.timeout)
+	}
 	defer promptCancel()
+
+	promptStart := float64(time.Now().UnixMilli()) / 1000
 
 	parts := []ocsdk.SessionPromptParamsPartUnion{
 		ocsdk.TextPartInputParam{
@@ -252,41 +301,167 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptResu
 		})
 	}
 
-	resp, err := c.client.Session.Prompt(promptCtx, resolvedSessionID, params)
-	if err != nil {
-		return nil, err
+	resolvedAgent := strings.TrimSpace(request.Agent)
+	if resolvedAgent != "" {
+		params.Agent = ocsdk.F(resolvedAgent)
 	}
 
-	resultSessionID := strings.TrimSpace(resp.Info.SessionID)
+	responseChan := make(chan *ocsdk.SessionPromptResponse, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		resp, err := c.client.Session.Prompt(promptCtx, resolvedSessionID, params)
+		if err != nil {
+			errorChan <- err
+			return
+		}
+		responseChan <- resp
+	}()
+
+	ticker := time.NewTicker(promptPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-promptCtx.Done():
+			return nil, promptCtx.Err()
+		case err := <-errorChan:
+			return nil, err
+		case resp := <-responseChan:
+			return c.buildPromptResultFromPromptResponse(promptCtx, resolvedSessionID, resolvedWorkdir, resp)
+		case <-ticker.C:
+			messageResp, done, err := c.pollPromptCompletion(promptCtx, resolvedSessionID, promptStart)
+			if err != nil {
+				return nil, err
+			}
+			if !done || messageResp == nil {
+				continue
+			}
+			return c.buildPromptResultFromMessageResponse(promptCtx, resolvedSessionID, resolvedWorkdir, messageResp)
+		}
+	}
+}
+
+func (c *Client) pollPromptCompletion(ctx context.Context, sessionID string, promptStart float64) (*ocsdk.SessionMessageResponse, bool, error) {
+	messages, err := c.client.Session.Messages(ctx, sessionID, ocsdk.SessionMessagesParams{})
+	if err != nil {
+		return nil, false, err
+	}
+	if messages == nil {
+		return nil, false, nil
+	}
+
+	var latestAssistant *ocsdk.AssistantMessage
+	for _, message := range *messages {
+		assistant, ok := message.Info.AsUnion().(ocsdk.AssistantMessage)
+		if !ok {
+			continue
+		}
+		if assistant.Time.Created+0.001 < promptStart {
+			continue
+		}
+		if latestAssistant == nil || assistant.Time.Created > latestAssistant.Time.Created {
+			candidate := assistant
+			latestAssistant = &candidate
+		}
+	}
+
+	if latestAssistant == nil {
+		return nil, false, nil
+	}
+	if latestAssistant.Error.Name != "" {
+		return nil, false, fmt.Errorf("prompt failed: %s", latestAssistant.Error.Name)
+	}
+	if latestAssistant.Time.Completed <= 0 {
+		return nil, false, nil
+	}
+
+	resp, err := c.client.Session.Message(ctx, sessionID, latestAssistant.ID, ocsdk.SessionMessageParams{})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return resp, true, nil
+}
+
+func (c *Client) buildPromptResultFromPromptResponse(ctx context.Context, fallbackSessionID string, fallbackWorkdir string, response *ocsdk.SessionPromptResponse) (*PromptResult, error) {
+	if response == nil {
+		return nil, fmt.Errorf("empty prompt response")
+	}
+	if response.Info.Error.Name != "" {
+		return nil, fmt.Errorf("prompt failed: %s", response.Info.Error.Name)
+	}
+
+	resultSessionID := strings.TrimSpace(response.Info.SessionID)
 	if resultSessionID == "" {
-		resultSessionID = resolvedSessionID
+		resultSessionID = strings.TrimSpace(fallbackSessionID)
 	}
 
 	result := &PromptResult{
-		Reply:      extractReply(resp.Parts),
+		Reply:      extractReply(response.Parts),
 		SessionID:  resultSessionID,
-		Model:      strings.TrimSpace(resp.Info.ModelID),
-		Workdir:    resolvedWorkdir,
-		ProviderID: strings.TrimSpace(resp.Info.ProviderID),
-		ModelID:    strings.TrimSpace(resp.Info.ModelID),
-		Mode:       strings.TrimSpace(resp.Info.Mode),
+		Model:      strings.TrimSpace(response.Info.ModelID),
+		Workdir:    strings.TrimSpace(fallbackWorkdir),
+		ProviderID: strings.TrimSpace(response.Info.ProviderID),
+		ModelID:    strings.TrimSpace(response.Info.ModelID),
+		Mode:       strings.TrimSpace(response.Info.Mode),
 	}
 
+	c.fillPromptResultSessionInfo(ctx, result)
+
+	return result, nil
+}
+
+func (c *Client) buildPromptResultFromMessageResponse(ctx context.Context, fallbackSessionID string, fallbackWorkdir string, response *ocsdk.SessionMessageResponse) (*PromptResult, error) {
+	if response == nil {
+		return nil, fmt.Errorf("empty message response")
+	}
+
+	assistant, ok := response.Info.AsUnion().(ocsdk.AssistantMessage)
+	if !ok {
+		return nil, fmt.Errorf("unexpected message role: %s", response.Info.Role)
+	}
+	if assistant.Error.Name != "" {
+		return nil, fmt.Errorf("prompt failed: %s", assistant.Error.Name)
+	}
+
+	resultSessionID := strings.TrimSpace(assistant.SessionID)
 	if resultSessionID == "" {
-		return result, nil
+		resultSessionID = strings.TrimSpace(fallbackSessionID)
 	}
 
-	session, err := c.client.Session.Get(promptCtx, resultSessionID, ocsdk.SessionGetParams{})
+	result := &PromptResult{
+		Reply:      extractReply(response.Parts),
+		SessionID:  resultSessionID,
+		Model:      strings.TrimSpace(assistant.ModelID),
+		Workdir:    strings.TrimSpace(fallbackWorkdir),
+		ProviderID: strings.TrimSpace(assistant.ProviderID),
+		ModelID:    strings.TrimSpace(assistant.ModelID),
+		Mode:       strings.TrimSpace(assistant.Mode),
+	}
+
+	c.fillPromptResultSessionInfo(ctx, result)
+
+	return result, nil
+}
+
+func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *PromptResult) {
+	if result == nil {
+		return
+	}
+	if strings.TrimSpace(result.SessionID) == "" {
+		return
+	}
+
+	session, err := c.client.Session.Get(ctx, result.SessionID, ocsdk.SessionGetParams{})
 	if err != nil || session == nil {
-		return result, nil
+		return
 	}
 
 	result.Title = strings.TrimSpace(session.Title)
 	if strings.TrimSpace(session.Directory) != "" {
 		result.Workdir = strings.TrimSpace(session.Directory)
 	}
-
-	return result, nil
 }
 
 func (c *Client) resolveModel(ctx context.Context, model string, workdir string) (string, string, error) {

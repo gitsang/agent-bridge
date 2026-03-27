@@ -16,7 +16,7 @@ func TestParseInputPlain(t *testing.T) {
 }
 
 func TestParseInputSlashCommand(t *testing.T) {
-	parsed, err := ParseInput(`/new --model "openai/gpt-5.4" --work-dir '/tmp/demo dir'`)
+	parsed, err := ParseInput(`/new --model "openai/gpt-5.4" --agent quick --work-dir '/tmp/demo dir'`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,6 +28,9 @@ func TestParseInputSlashCommand(t *testing.T) {
 	}
 	if got, want := parsed.Invocation.Flags["model"], "openai/gpt-5.4"; got != want {
 		t.Fatalf("model flag = %q, want %q", got, want)
+	}
+	if got, want := parsed.Invocation.Flags["agent"], "quick"; got != want {
+		t.Fatalf("agent flag = %q, want %q", got, want)
 	}
 	if got, want := parsed.Invocation.Flags["work-dir"], "/tmp/demo dir"; got != want {
 		t.Fatalf("work-dir flag = %q, want %q", got, want)
