@@ -23,3 +23,9 @@ opencode:
   username: ""
   password: ""
   timeout: 0s
+
+conversation_store:
+  type: "memory" # memory | file
+  file_path: "data/conversation_store.json"
+  ttl: 24h
+  max_items: 1024

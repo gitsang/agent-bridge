@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/gitsang/configer"
@@ -77,8 +78,13 @@ func Run(cmd *cobra.Command, _ []string) error {
 		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
 		opencode.WithTimeout(c.Opencode.Timeout),
 	)
+	conversationStore, err := buildConversationStore(c)
+	if err != nil {
+		return err
+	}
 	connector := connect.New(
 		connect.WithOpencodeClient(opencodeClient),
+		connect.WithConversationStore(conversationStore),
 	)
 
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -146,6 +152,18 @@ func Run(cmd *cobra.Command, _ []string) error {
 	}
 
 	return group.Wait()
+}
+
+func buildConversationStore(c Config) (connect.ConversationStore, error) {
+	storeType := strings.ToLower(strings.TrimSpace(c.ConversationStore.Type))
+	switch storeType {
+	case "", "memory":
+		return connect.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
+	case "file":
+		return connect.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
+	default:
+		return nil, fmt.Errorf("unsupported conversation store type %q", c.ConversationStore.Type)
+	}
 }
 
 func main() {

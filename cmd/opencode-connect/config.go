@@ -16,4 +16,10 @@ type Config struct {
 		Password string        `usage:"opencode server password" json:"password" yaml:"password"`
 		Timeout  time.Duration `default:"0s" usage:"opencode request timeout, 0 means no timeout" json:"timeout" yaml:"timeout"`
 	} `json:"opencode" yaml:"opencode"`
+	ConversationStore struct {
+		Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
+		FilePath string        `default:"data/conversation_store.json" usage:"conversation store file path when type=file" json:"file_path" yaml:"file_path"`
+		TTL      time.Duration `default:"24h" usage:"conversation store ttl" json:"ttl" yaml:"ttl"`
+		MaxItems int           `default:"1024" usage:"conversation store max items" json:"max_items" yaml:"max_items"`
+	} `json:"conversation_store" yaml:"conversation_store"`
 }
