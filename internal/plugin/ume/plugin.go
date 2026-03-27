@@ -27,6 +27,7 @@ const (
 	messageIDRetention  = 24 * time.Hour
 	maxRecentMessageIDs = 32
 	maxSessionStates    = 1024
+	replyTimeout        = 35 * time.Second
 )
 
 var atTagPattern = regexp.MustCompile(`(?s)<at\b[^>]*>.*?</at>\s*`)
@@ -225,7 +226,6 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				"session_id", chatSessionID,
 				"msg_id", msgID,
 				"request_message_length", len(message),
-				"opencode_session_id", strings.TrimSpace(connectReq.Opencode.SessionID),
 			)
 			resp, err := handle(context.Background(), &connectReq)
 			if err != nil {
@@ -234,15 +234,30 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				if errors.As(err, &connectError) {
 					replyLogger.Debug("ume reply handler connect error", "status_code", connectError.StatusCode)
 				}
+
+				errorResp := &connect.Message{
+					Content: fmt.Sprintf("Error: %s", err.Error()),
+					Chat: connect.ChatContext{
+						SessionID: chatSessionID,
+					},
+				}
+				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
+				defer replyCancel()
+				if sendErr := p.sendReply(replyCtx, token, errorResp); sendErr != nil {
+					replyLogger.Debug("ume error reply delivery failed", "error", sendErr)
+				}
 				return
 			}
 
 			replyLogger.Debug("ume reply handler succeeded",
 				"reply_message_length", len(resp.Content),
 				"reply_session_id_present", strings.TrimSpace(resp.Opencode.SessionID) != "",
+				"opencode_session_id", strings.TrimSpace(resp.Opencode.SessionID),
 			)
 
-			if err := p.sendReply(context.Background(), token, resp); err != nil {
+			replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
+			defer replyCancel()
+			if err := p.sendReply(replyCtx, token, resp); err != nil {
 				replyLogger.Debug("ume reply delivery failed", "error", err)
 				return
 			}

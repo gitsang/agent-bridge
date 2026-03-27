@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -93,6 +95,40 @@ func TestPluginDeduplicatesMessageID(t *testing.T) {
 	waitForCondition(t, func() bool {
 		return handleCalls.Load() == 1
 	}, "deduplicate repeated message id")
+}
+
+func TestPluginSendsErrorReplyWhenHandlerFails(t *testing.T) {
+	t.Parallel()
+
+	sendRecorder := newSendRecorderServer()
+	defer sendRecorder.Close()
+
+	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
+
+	handler := plugin.newHTTPHandler(func(_ context.Context, _ *connect.Message) (*connect.Message, error) {
+		return nil, fmt.Errorf("context deadline exceeded")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{"body":"hello","msgId":3001,"msgType":"text","sessionId":1002}]`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if got, want := resp.Code, http.StatusOK; got != want {
+		t.Fatalf("response code = %d, want %d", got, want)
+	}
+
+	waitForCondition(t, func() bool {
+		return len(sendRecorder.Requests()) == 1
+	}, "record one error send request")
+
+	requests := sendRecorder.Requests()
+	if got, want := requests[0].Token, "test-token"; got != want {
+		t.Fatalf("send token = %q, want %q", got, want)
+	}
+	if !strings.Contains(requests[0].Payload.Body, "Error: context deadline exceeded") {
+		t.Fatalf("error reply body = %q, want contains %q", requests[0].Payload.Body, "Error: context deadline exceeded")
+	}
 }
 
 func waitForCondition(t *testing.T, check func() bool, description string) {
