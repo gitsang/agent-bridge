@@ -75,6 +75,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	opencodeClient := opencode.NewClient(
 		c.Opencode.BaseURL,
 		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
+		opencode.WithTimeout(c.Opencode.Timeout),
 	)
 	connector := connect.New(
 		connect.WithOpencodeClient(opencodeClient),

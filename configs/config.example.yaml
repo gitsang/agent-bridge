@@ -13,12 +13,13 @@ log:
 plugins:
   openai-compatible:
     openai-compatible:
-      listen: ":8192"
+      listen: ":24368"
   ume:
     ume:
-      listen: ":8193"
+      listen: ":24369"
 
 opencode:
   baseurl: "http://127.0.0.1:4096"
   username: ""
   password: ""
+  timeout: 10m
