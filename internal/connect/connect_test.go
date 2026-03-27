@@ -71,7 +71,12 @@ func TestHandleSessionAttachCommand(t *testing.T) {
 	t.Parallel()
 
 	store := NewMemoryConversationStore(0, 0)
-	client := &fakeSessionClient{}
+	client := &fakeSessionClient{
+		getSession: &opencode.Session{ID: "ses_target", Title: "Target", Directory: "/repo/target"},
+		getSessionMessages: []opencode.SessionMessage{
+			{ID: "msg-1", ProviderID: "openai", ModelID: "gpt-5.4", Mode: "build", Role: "assistant"},
+		},
+	}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
 	resp, err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_target", Chat: ChatContext{SessionID: "chat-1"}})
@@ -84,6 +89,12 @@ func TestHandleSessionAttachCommand(t *testing.T) {
 	if got, want := resp.Opencode.SessionID, "ses_target"; got != want {
 		t.Fatalf("response session = %q, want %q", got, want)
 	}
+	if got, want := resp.Opencode.Workdir, "/repo/target"; got != want {
+		t.Fatalf("response workdir = %q, want %q", got, want)
+	}
+	if got, want := resp.Opencode.Model, "openai/gpt-5.4 (build)"; got != want {
+		t.Fatalf("response model = %q, want %q", got, want)
+	}
 
 	state, ok := store.Get("chat-1")
 	if !ok {
@@ -91,6 +102,50 @@ func TestHandleSessionAttachCommand(t *testing.T) {
 	}
 	if got, want := state.OpencodeSessionID, "ses_target"; got != want {
 		t.Fatalf("bound session = %q, want %q", got, want)
+	}
+	if got, want := state.DefaultWorkdir, "/repo/target"; got != want {
+		t.Fatalf("default workdir = %q, want %q", got, want)
+	}
+	if got, want := state.LastProviderID, "openai"; got != want {
+		t.Fatalf("last provider id = %q, want %q", got, want)
+	}
+	if got, want := state.LastModelID, "gpt-5.4"; got != want {
+		t.Fatalf("last model id = %q, want %q", got, want)
+	}
+	if got, want := state.LastMode, "build"; got != want {
+		t.Fatalf("last mode = %q, want %q", got, want)
+	}
+}
+
+func TestHandleSessionCurrentCommandFetchesSessionMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryConversationStore(0, 0)
+	store.PutBinding("chat-1", "ses_target")
+	store.SetDefaultModel("chat-1", "openai/gpt-5.4")
+	store.SetDefaultWorkdir("chat-1", "/repo/local")
+	store.SetLastModelInfo("chat-1", "anthropic", "claude-3.5", "architect")
+
+	client := &fakeSessionClient{
+		getSession: &opencode.Session{ID: "ses_target", Title: "Target", Directory: "/repo/remote"},
+	}
+	connector := New(WithOpencodeClient(client), WithConversationStore(store))
+
+	resp, err := connector.Handle(context.Background(), &Message{Content: "/session current", Chat: ChatContext{SessionID: "chat-1"}})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if got, want := client.getSessionID, "ses_target"; got != want {
+		t.Fatalf("GetSession() session = %q, want %q", got, want)
+	}
+	if got, want := resp.Opencode.SessionID, "ses_target"; got != want {
+		t.Fatalf("response session = %q, want %q", got, want)
+	}
+	if got, want := resp.Opencode.Workdir, "/repo/remote"; got != want {
+		t.Fatalf("response workdir = %q, want %q", got, want)
+	}
+	if got, want := resp.Opencode.Model, "anthropic/claude-3.5 (architect)"; got != want {
+		t.Fatalf("response model = %q, want %q", got, want)
 	}
 }
 
@@ -145,16 +200,18 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 }
 
 type fakeSessionClient struct {
-	promptResult   *opencode.PromptResult
-	createdSession *opencode.Session
-	listSessions   []opencode.Session
-	listModels     []opencode.ModelInfo
-	getErr         error
-	createErr      error
-	promptErr      error
-	getSessionID   string
-	promptRequest  opencode.PromptRequest
-	createRequest  opencode.CreateSessionRequest
+	promptResult      *opencode.PromptResult
+	createdSession    *opencode.Session
+	listSessions      []opencode.Session
+	listModels        []opencode.ModelInfo
+	getSession        *opencode.Session
+	getSessionMessages []opencode.SessionMessage
+	getErr            error
+	createErr         error
+	promptErr         error
+	getSessionID      string
+	promptRequest     opencode.PromptRequest
+	createRequest     opencode.CreateSessionRequest
 }
 
 func (f *fakeSessionClient) ListSessions(context.Context, string) ([]opencode.Session, error) {
@@ -170,7 +227,17 @@ func (f *fakeSessionClient) GetSession(_ context.Context, sessionID string) (*op
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
+	if f.getSession != nil {
+		return f.getSession, nil
+	}
 	return &opencode.Session{ID: sessionID}, nil
+}
+
+func (f *fakeSessionClient) GetSessionMessages(context.Context, string) ([]opencode.SessionMessage, error) {
+	if f.getSessionMessages != nil {
+		return f.getSessionMessages, nil
+	}
+	return []opencode.SessionMessage{}, nil
 }
 
 func (f *fakeSessionClient) CreateSession(_ context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error) {

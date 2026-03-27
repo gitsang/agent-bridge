@@ -34,6 +34,8 @@ func (p *MyPlugin) Serve(ctx context.Context, handle plugin.HandleFunc) error {
 }
 ```
 
+Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 以及多轮响应预留的主动发送通道。
+
 ### Supports
 
 - [x] OpenAI-compatible Chat Completions API

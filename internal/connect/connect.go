@@ -14,6 +14,7 @@ type sessionClient interface {
 	ListSessions(ctx context.Context, workdir string) ([]opencode.Session, error)
 	ListModels(ctx context.Context, workdir string) ([]opencode.ModelInfo, error)
 	GetSession(ctx context.Context, sessionID string) (*opencode.Session, error)
+	GetSessionMessages(ctx context.Context, sessionID string) ([]opencode.SessionMessage, error)
 	CreateSession(ctx context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error)
 	Prompt(ctx context.Context, request opencode.PromptRequest) (*opencode.PromptResult, error)
 }
@@ -133,6 +134,9 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		if resolvedWorkdir != "" {
 			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
 		}
+		if result.ProviderID != "" || result.ModelID != "" {
+			c.conversationStore.SetLastModelInfo(resolvedChatSessionID, result.ProviderID, result.ModelID, result.Mode)
+		}
 	}
 
 	response := &Message{
@@ -236,11 +240,53 @@ func (c *OpencodeConnect) handleSessionCommand(ctx context.Context, req *Message
 		if targetSessionID == "" {
 			return nil, NewError(http.StatusBadRequest, "opencode session id is required")
 		}
-		if _, err := c.opencodeClient.GetSession(ctx, targetSessionID); err != nil {
+		session, err := c.opencodeClient.GetSession(ctx, targetSessionID)
+		if err != nil {
 			return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", targetSessionID))
 		}
 		c.conversationStore.PutBinding(resolvedChatSessionID, targetSessionID)
-		return &Message{Content: fmt.Sprintf("Attached conversation to session %s", targetSessionID), Chat: req.Chat, Opencode: OpencodeContext{SessionID: targetSessionID}}, nil
+
+		resolvedWorkdir := ""
+		resolvedTitle := ""
+		var lastProviderID, lastModelID, lastMode string
+		if session != nil {
+			resolvedWorkdir = strings.TrimSpace(session.Directory)
+			resolvedTitle = strings.TrimSpace(session.Title)
+		}
+		if resolvedWorkdir != "" {
+			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
+		}
+
+		messages, err := c.opencodeClient.GetSessionMessages(ctx, targetSessionID)
+		if err == nil && len(messages) > 0 {
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "assistant" {
+					lastProviderID = messages[i].ProviderID
+					lastModelID = messages[i].ModelID
+					lastMode = messages[i].Mode
+					if lastProviderID != "" || lastModelID != "" {
+						c.conversationStore.SetLastModelInfo(resolvedChatSessionID, lastProviderID, lastModelID, lastMode)
+					}
+					break
+				}
+			}
+		}
+
+		state, _ := c.conversationStore.Get(resolvedChatSessionID)
+		modelInfo := formatModelInfo(lastProviderID, lastModelID, lastMode)
+		if modelInfo == "" {
+			modelInfo = strings.TrimSpace(state.DefaultModel)
+		}
+		return &Message{
+			Content: fmt.Sprintf("Attached conversation to session %s", targetSessionID),
+			Chat:    req.Chat,
+			Opencode: OpencodeContext{
+				SessionID: targetSessionID,
+				Title:     resolvedTitle,
+				Model:     modelInfo,
+				Workdir:   resolvedWorkdir,
+			},
+		}, nil
 	case "detach":
 		if resolvedChatSessionID == "" {
 			return nil, NewError(http.StatusBadRequest, "chat session id is required for /session detach")
@@ -255,7 +301,61 @@ func (c *OpencodeConnect) handleSessionCommand(ctx context.Context, req *Message
 		if !ok {
 			return &Message{Content: "No session binding for current conversation", Chat: req.Chat}, nil
 		}
-		return &Message{Content: formatCurrentState(state), Chat: req.Chat, Opencode: OpencodeContext{SessionID: strings.TrimSpace(state.OpencodeSessionID), Model: strings.TrimSpace(state.DefaultModel), Workdir: strings.TrimSpace(state.DefaultWorkdir)}}, nil
+
+		resolvedSessionID := strings.TrimSpace(state.OpencodeSessionID)
+		resolvedWorkdir := strings.TrimSpace(state.DefaultWorkdir)
+		resolvedTitle := ""
+
+		var lastProviderID, lastModelID, lastMode string
+		if strings.TrimSpace(state.LastProviderID) != "" || strings.TrimSpace(state.LastModelID) != "" {
+			lastProviderID = strings.TrimSpace(state.LastProviderID)
+			lastModelID = strings.TrimSpace(state.LastModelID)
+			lastMode = strings.TrimSpace(state.LastMode)
+		}
+
+		if resolvedSessionID != "" {
+			session, err := c.opencodeClient.GetSession(ctx, resolvedSessionID)
+			if err != nil {
+				return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", resolvedSessionID))
+			}
+			if session != nil {
+				resolvedTitle = strings.TrimSpace(session.Title)
+				resolvedWorkdir = firstNonEmpty(strings.TrimSpace(session.Directory), resolvedWorkdir)
+			}
+
+			if lastProviderID == "" && lastModelID == "" {
+				messages, err := c.opencodeClient.GetSessionMessages(ctx, resolvedSessionID)
+				if err == nil && len(messages) > 0 {
+					for i := len(messages) - 1; i >= 0; i-- {
+						if messages[i].Role == "assistant" {
+							lastProviderID = messages[i].ProviderID
+							lastModelID = messages[i].ModelID
+							lastMode = messages[i].Mode
+							break
+						}
+					}
+				}
+			}
+		}
+
+		currentState := state
+		currentState.DefaultWorkdir = resolvedWorkdir
+
+		modelInfo := formatModelInfo(lastProviderID, lastModelID, lastMode)
+		if modelInfo == "" {
+			modelInfo = strings.TrimSpace(state.DefaultModel)
+		}
+
+		return &Message{
+			Content: formatCurrentState(currentState),
+			Chat:    req.Chat,
+			Opencode: OpencodeContext{
+				SessionID: resolvedSessionID,
+				Title:     resolvedTitle,
+				Model:     modelInfo,
+				Workdir:   resolvedWorkdir,
+			},
+		}, nil
 	case "list":
 		workdir := strings.TrimSpace(invocation.Flags["work-dir"])
 		if workdir == "" {
@@ -492,4 +592,17 @@ func formatCurrentState(state ConversationState) string {
 	}
 
 	return builder.String()
+}
+
+func formatModelInfo(providerID, modelID, mode string) string {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(providerID) != "" && strings.TrimSpace(modelID) != "" {
+		parts = append(parts, fmt.Sprintf("%s/%s", strings.TrimSpace(providerID), strings.TrimSpace(modelID)))
+	} else if strings.TrimSpace(modelID) != "" {
+		parts = append(parts, strings.TrimSpace(modelID))
+	}
+	if strings.TrimSpace(mode) != "" {
+		parts = append(parts, fmt.Sprintf("(%s)", strings.TrimSpace(mode)))
+	}
+	return strings.Join(parts, " ")
 }

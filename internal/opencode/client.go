@@ -35,11 +35,22 @@ type CreateSessionRequest struct {
 }
 
 type PromptResult struct {
-	Reply     string
-	SessionID string
-	Title     string
-	Workdir   string
-	Model     string
+	Reply      string
+	SessionID  string
+	Title      string
+	Workdir    string
+	Model      string
+	ProviderID string
+	ModelID    string
+	Mode       string
+}
+
+type SessionMessage struct {
+	ID         string
+	ProviderID string
+	ModelID    string
+	Mode       string
+	Role       string
 }
 
 type ModelInfo struct {
@@ -163,6 +174,34 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*ocsdk.Sessi
 	return c.client.Session.Get(ctx, resolvedSessionID, ocsdk.SessionGetParams{})
 }
 
+func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]SessionMessage, error) {
+	resolvedSessionID := strings.TrimSpace(sessionID)
+	if resolvedSessionID == "" {
+		return nil, fmt.Errorf("opencode session id is required")
+	}
+
+	resp, err := c.client.Session.Messages(ctx, resolvedSessionID, ocsdk.SessionMessagesParams{})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return []SessionMessage{}, nil
+	}
+
+	messages := make([]SessionMessage, 0, len(*resp))
+	for _, msg := range *resp {
+		messages = append(messages, SessionMessage{
+			ID:         strings.TrimSpace(msg.Info.ID),
+			ProviderID: strings.TrimSpace(msg.Info.ProviderID),
+			ModelID:    strings.TrimSpace(msg.Info.ModelID),
+			Mode:       strings.TrimSpace(msg.Info.Mode),
+			Role:       string(msg.Info.Role),
+		})
+	}
+
+	return messages, nil
+}
+
 func (c *Client) CreateSession(ctx context.Context, request CreateSessionRequest) (*ocsdk.Session, error) {
 	params := ocsdk.SessionNewParams{}
 	if strings.TrimSpace(request.Workdir) != "" {
@@ -224,10 +263,13 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptResu
 	}
 
 	result := &PromptResult{
-		Reply:     extractReply(resp.Parts),
-		SessionID: resultSessionID,
-		Model:     strings.TrimSpace(resp.Info.ModelID),
-		Workdir:   resolvedWorkdir,
+		Reply:      extractReply(resp.Parts),
+		SessionID:  resultSessionID,
+		Model:      strings.TrimSpace(resp.Info.ModelID),
+		Workdir:    resolvedWorkdir,
+		ProviderID: strings.TrimSpace(resp.Info.ProviderID),
+		ModelID:    strings.TrimSpace(resp.Info.ModelID),
+		Mode:       strings.TrimSpace(resp.Info.Mode),
 	}
 
 	if resultSessionID == "" {

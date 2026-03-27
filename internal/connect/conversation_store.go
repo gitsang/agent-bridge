@@ -17,6 +17,9 @@ type ConversationState struct {
 	OpencodeSessionID string
 	DefaultModel      string
 	DefaultWorkdir    string
+	LastProviderID    string
+	LastModelID       string
+	LastMode          string
 	BoundAt           time.Time
 	LastSeenAt        time.Time
 }
@@ -26,6 +29,7 @@ type ConversationStore interface {
 	PutBinding(chatSessionID string, opencodeSessionID string)
 	SetDefaultModel(chatSessionID string, model string)
 	SetDefaultWorkdir(chatSessionID string, workdir string)
+	SetLastModelInfo(chatSessionID string, providerID, modelID, mode string)
 	Delete(chatSessionID string)
 	Touch(chatSessionID string)
 	List() []ConversationState
@@ -125,6 +129,24 @@ func (s *MemoryConversationStore) SetDefaultWorkdir(chatSessionID string, workdi
 	s.cleanupExpiredLocked(now)
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.DefaultWorkdir = strings.TrimSpace(workdir)
+	state.LastSeenAt = now
+	s.conversations[resolvedChatSessionID] = state
+}
+
+func (s *MemoryConversationStore) SetLastModelInfo(chatSessionID string, providerID, modelID, mode string) {
+	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
+	if resolvedChatSessionID == "" {
+		return
+	}
+
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
+	state := s.ensureStateLocked(resolvedChatSessionID, now)
+	state.LastProviderID = strings.TrimSpace(providerID)
+	state.LastModelID = strings.TrimSpace(modelID)
+	state.LastMode = strings.TrimSpace(mode)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 }
