@@ -145,7 +145,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		Opencode: OpencodeContext{
 			SessionID: responseSessionID,
 			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Opencode.Title)),
-			Model:     firstNonEmpty(strings.TrimSpace(result.Model), resolvedModel),
+			Model:     firstNonEmpty(formatModelInfo(result.ProviderID, result.ModelID, result.Mode), resolvedModel),
 			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),
 		},
 	}
