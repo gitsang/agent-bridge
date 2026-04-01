@@ -160,7 +160,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			"x_real_ip", strings.TrimSpace(r.Header.Get("X-Real-IP")),
 		)
 		defer func() {
-			logger.Info("ume webhook access",
+			logger.Info("ume webhook receive",
 				"status_code", statusCode,
 				"duration_ms", time.Since(startedAt).Milliseconds(),
 				"access_token", r.URL.Query().Get("access_token"),
@@ -216,23 +216,27 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 		}
 
 		go func() {
+			replyLogger := p.logger.With(
+				"session_id", chatSessionID,
+				"msg_id", msgID,
+				"request_message_length", len(message),
+			)
+			var replyErr error
+			defer func() {
+				replyLogger.Debug("ume reply done", "error", replyErr)
+			}()
+
 			connectReq := connect.Message{
 				Content: message,
 				Chat: connect.ChatContext{
 					SessionID: chatSessionID,
 				},
 			}
-			replyLogger := p.logger.With(
-				"session_id", chatSessionID,
-				"msg_id", msgID,
-				"request_message_length", len(message),
-			)
 			resp, err := handle(context.Background(), &connectReq)
 			if err != nil {
-				replyLogger.Debug("ume reply handler failed", "error", err)
 				var connectError *connect.Error
 				if errors.As(err, &connectError) {
-					replyLogger.Debug("ume reply handler connect error", "status_code", connectError.StatusCode)
+					replyLogger = replyLogger.With("connect_status_code", connectError.StatusCode)
 				}
 
 				errorResp := &connect.Message{
@@ -243,26 +247,23 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				}
 				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
 				defer replyCancel()
+				replyErr = fmt.Errorf("handle: %w", err)
 				if sendErr := p.sendReply(replyCtx, token, errorResp); sendErr != nil {
-					replyLogger.Debug("ume error reply delivery failed", "error", sendErr)
+					replyLogger = replyLogger.With("send_error_reply_err", sendErr)
 				}
 				return
 			}
 
-			replyLogger.Debug("ume reply handler succeeded",
+			replyLogger = replyLogger.With(
 				"reply_message_length", len(resp.Content),
-				"reply_session_id_present", strings.TrimSpace(resp.Opencode.SessionID) != "",
 				"opencode_session_id", strings.TrimSpace(resp.Opencode.SessionID),
 			)
 
 			replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
 			defer replyCancel()
 			if err := p.sendReply(replyCtx, token, resp); err != nil {
-				replyLogger.Debug("ume reply delivery failed", "error", err)
-				return
+				replyErr = fmt.Errorf("send reply: %w", err)
 			}
-
-			replyLogger.Debug("ume reply delivered", "reply_message_length", len(resp.Content))
 		}()
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -388,15 +389,24 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.M
 	query := endpoint.Query()
 	query.Set("access_token", strings.TrimSpace(token))
 	endpoint.RawQuery = query.Encode()
+
+	startedAt := time.Now()
+	var sendErr error
+	var statusCode int
 	logger := p.logger.With(
 		"send_scheme", endpoint.Scheme,
 		"send_host", endpoint.Host,
 		"send_path", endpoint.Path,
 		"content_length", len(content),
-		"access_token", strings.TrimSpace(token),
 		"access_token_present", strings.TrimSpace(token) != "",
 	)
-	logger.Debug("ume send reply start")
+	defer func() {
+		logger.Debug("ume reply sended",
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"status_code", statusCode,
+			"error", sendErr,
+		)
+	}()
 
 	payload := UmeSendRequest{
 		MsgType: "text",
@@ -404,44 +414,31 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.M
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		logger.Debug("ume send reply marshal failed", "error", err)
-		return fmt.Errorf("marshal ume reply: %w", err)
+		sendErr = fmt.Errorf("marshal ume reply: %w", err)
+		return sendErr
 	}
-	logger.Debug("ume send reply payload ready", "payload_bytes", len(payloadBytes))
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payloadBytes))
 	if err != nil {
-		logger.Debug("ume send reply request build failed", "error", err)
-		return fmt.Errorf("build ume reply request: %w", err)
+		sendErr = fmt.Errorf("build ume reply request: %w", err)
+		return sendErr
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	logger.Debug("ume send reply request built", "method", httpReq.Method)
 
-	startedAt := time.Now()
 	httpResp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		logger.Debug("ume send reply request failed",
-			"error", err,
-			"duration_ms", time.Since(startedAt).Milliseconds(),
-		)
-		return fmt.Errorf("send ume reply: %w", err)
+		sendErr = fmt.Errorf("send ume reply: %w", err)
+		return sendErr
 	}
 	defer httpResp.Body.Close()
 
+	statusCode = httpResp.StatusCode
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
-		logger.Debug("ume send reply rejected",
-			"status_code", httpResp.StatusCode,
-			"duration_ms", time.Since(startedAt).Milliseconds(),
-			"response_body", strings.TrimSpace(string(body)),
-		)
-		return fmt.Errorf("ume reply failed: status=%d body=%s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+		logger = logger.With("response_body", strings.TrimSpace(string(body)))
+		sendErr = fmt.Errorf("ume reply failed: status=%d body=%s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+		return sendErr
 	}
-
-	logger.Debug("ume send reply completed",
-		"status_code", httpResp.StatusCode,
-		"duration_ms", time.Since(startedAt).Milliseconds(),
-	)
 
 	return nil
 }
