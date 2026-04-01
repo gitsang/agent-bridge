@@ -223,7 +223,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			)
 			var replyErr error
 			defer func() {
-				replyLogger.Debug("ume reply done", "error", replyErr)
+				replyLogger.Debug("message handled and replied", "error", replyErr)
 			}()
 
 			connectReq := connect.Message{
