@@ -20,7 +20,15 @@ type Plugin interface {
 }
 ```
 
-只需要做一件事情，就是如何接收消息，转换消息，调用 HandlerFunc 处理，然后转换响应，将消息送回通讯软件。
+只需要做一件事情，就是如何接收消息，转换消息，调用 HandlerFunc 处理，然后将 reply 回调收到的消息送回通讯软件。
+
+`HandleFunc` 签名如下：
+
+```go
+type HandleFunc func(ctx context.Context, req *connect.Message, reply connect.ReplyFunc) error
+```
+
+`reply` 是一个回调，opencode 每产出一条回复就会调用一次。对于支持流式输出的通讯软件，插件可以在 `reply` 被调用时立即发送；对于只需要最终结果的场景（如 HTTP 同步接口），可以在回调里暂存最后一条消息，等 handle 返回后再使用。
 
 一个简单的伪代码例子：
 
@@ -28,13 +36,18 @@ type Plugin interface {
 func (p *MyPlugin) Serve(ctx context.Context, handle plugin.HandleFunc) error {
   for {
     message := ReceiveMessageFromChatApp()
-    response, _ := handle(ctx, message)
-    SendMessageToChatApp(response)
+    err := handle(ctx, message, func(reply *connect.Message) error {
+      SendMessageToChatApp(reply)
+      return nil
+    })
+    if err != nil {
+      SendErrorToChatApp(err)
+    }
   }
 }
 ```
 
-Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 以及多轮响应预留的主动发送通道。
+Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 等主动发送场景预留的通道。
 
 ### Supports
 
@@ -75,6 +88,7 @@ conversation_store:
 ## TODO List
 
 - [x] 支持 Message 命令列表
+- [x] 支持 opencode 多轮响应（通过 reply 回调逐条推送）
 - [ ] 支持 SO 插件
 - [ ] 完善部署和使用教程
 - [ ] 支持 ACP 协议对接 claude code 等 agent
