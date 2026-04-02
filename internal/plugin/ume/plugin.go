@@ -234,14 +234,14 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			}
 
 			sendCount := 0
-			send := func(msg *connect.Message) error {
+			reply := func(msg *connect.Message) error {
 				sendCount++
 				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
 				defer replyCancel()
 				return p.sendReply(replyCtx, token, msg)
 			}
 
-			_, err := handle(context.Background(), &connectReq, send)
+			err := handle(context.Background(), &connectReq, reply)
 			if err != nil {
 				var connectError *connect.Error
 				if errors.As(err, &connectError) {

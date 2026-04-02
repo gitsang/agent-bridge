@@ -26,14 +26,14 @@ func TestPluginStripsMentionAndPassesChatSession(t *testing.T) {
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, send connect.SendFunc) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, reply connect.ReplyFunc) error {
 		if got, want := req.Chat.SessionID, "742105222021128192"; got != want {
 			t.Fatalf("chat session = %q, want %q", got, want)
 		}
 		if got, want := req.Content, "hi"; got != want {
 			t.Fatalf("content = %q, want %q", got, want)
 		}
-		msg := &connect.Message{
+		return reply(&connect.Message{
 			Content: "first-reply",
 			Opencode: connect.OpencodeContext{
 				SessionID: "ses_created",
@@ -41,9 +41,7 @@ func TestPluginStripsMentionAndPassesChatSession(t *testing.T) {
 				Workdir:   "/workspace/one",
 				Model:     "openai/gpt-5.4",
 			},
-		}
-		_ = send(msg)
-		return msg, nil
+		})
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{"body":"<at id=\"x\">Opencode</at> hi","msgId":742841436585590784,"msgType":"text","sessionId":742105222021128192}]`)))
@@ -78,9 +76,9 @@ func TestPluginDeduplicatesMessageID(t *testing.T) {
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 	var handleCalls atomic.Int32
 
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, reply connect.ReplyFunc) error {
 		handleCalls.Add(1)
-		return &connect.Message{Content: req.Content}, nil
+		return reply(&connect.Message{Content: req.Content})
 	})
 
 	body := []byte(`[{"body":"hello","msgId":2001,"msgType":"text","sessionId":1001}]`)
@@ -107,8 +105,8 @@ func TestPluginSendsErrorReplyWhenHandlerFails(t *testing.T) {
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
 
-	handler := plugin.newHTTPHandler(func(_ context.Context, _ *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
-		return nil, fmt.Errorf("context deadline exceeded")
+	handler := plugin.newHTTPHandler(func(_ context.Context, _ *connect.Message, _ connect.ReplyFunc) error {
+		return fmt.Errorf("context deadline exceeded")
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{"body":"hello","msgId":3001,"msgType":"text","sessionId":1002}]`)))

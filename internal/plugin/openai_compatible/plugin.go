@@ -135,7 +135,11 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			},
 		}
 
-		resp, err := handle(r.Context(), &connectReq, nil)
+		var last *connect.Message
+		err = handle(r.Context(), &connectReq, func(msg *connect.Message) error {
+			last = msg
+			return nil
+		})
 		if err != nil {
 			status := http.StatusInternalServerError
 			var connectError *connect.Error
@@ -145,8 +149,12 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			writeOpenAIError(w, status, err.Error())
 			return
 		}
+		if last == nil {
+			writeOpenAIError(w, http.StatusInternalServerError, "no reply received")
+			return
+		}
 
-		writeJSON(w, http.StatusOK, newOpenAIChatCompletionResponse(req.Model, resp.Content))
+		writeJSON(w, http.StatusOK, newOpenAIChatCompletionResponse(req.Model, last.Content))
 	})
 
 	return mux

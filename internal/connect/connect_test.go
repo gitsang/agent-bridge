@@ -25,10 +25,11 @@ func TestHandleUsesConversationBindingForPrompt(t *testing.T) {
 	}
 
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
-	resp, err := connector.Handle(context.Background(), &Message{
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{
 		Content: "hello world",
 		Chat:    ChatContext{SessionID: "chat-1"},
-	}, nil)
+	}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -55,7 +56,8 @@ func TestHandleCreatesSessionWhenNoBinding(t *testing.T) {
 	}
 
 	connector := New(WithOpencodeClient(client))
-	resp, err := connector.Handle(context.Background(), &Message{Content: "hello world", Chat: ChatContext{SessionID: "chat-2"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "hello world", Chat: ChatContext{SessionID: "chat-2"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -79,7 +81,8 @@ func TestHandleSessionAttachCommand(t *testing.T) {
 	}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_target", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_target", Chat: ChatContext{SessionID: "chat-1"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -131,7 +134,8 @@ func TestHandleSessionCurrentCommandFetchesSessionMetadata(t *testing.T) {
 	}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "/session current", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "/session current", Chat: ChatContext{SessionID: "chat-1"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -156,7 +160,7 @@ func TestHandleModelSetCommand(t *testing.T) {
 	client := &fakeSessionClient{}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	_, err := connector.Handle(context.Background(), &Message{Content: "/model set openai/gpt-5.4", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	err := connector.Handle(context.Background(), &Message{Content: "/model set openai/gpt-5.4", Chat: ChatContext{SessionID: "chat-1"}}, nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -177,7 +181,7 @@ func TestHandleAgentSetCommand(t *testing.T) {
 	client := &fakeSessionClient{}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	_, err := connector.Handle(context.Background(), &Message{Content: "/agent set quick", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	err := connector.Handle(context.Background(), &Message{Content: "/agent set quick", Chat: ChatContext{SessionID: "chat-1"}}, nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -202,7 +206,8 @@ func TestHandleAgentListCommand(t *testing.T) {
 	}
 	connector := New(WithOpencodeClient(client))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "/agent list"}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "/agent list"}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -218,7 +223,8 @@ func TestHandleNewCommandWithAgentFlag(t *testing.T) {
 	client := &fakeSessionClient{createdSession: &opencode.Session{ID: "ses_created", Title: "Created", Directory: "/repo/created"}}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "/new --agent build", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "/new --agent build", Chat: ChatContext{SessionID: "chat-1"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -245,7 +251,8 @@ func TestHandleUsesConversationDefaultAgentForPrompt(t *testing.T) {
 	client := &fakeSessionClient{promptResult: &opencode.PromptResult{Reply: "ok", SessionID: "ses_bound"}}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "hello", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "hello", Chat: ChatContext{SessionID: "chat-1"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -265,7 +272,8 @@ func TestHandleCommandErrorReturnsMessage(t *testing.T) {
 	client := &fakeSessionClient{getErr: fmt.Errorf("connection failed")}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
-	resp, err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_missing", Chat: ChatContext{SessionID: "chat-1"}}, nil)
+	var resp *Message
+	err := connector.Handle(context.Background(), &Message{Content: "/session attach ses_missing", Chat: ChatContext{SessionID: "chat-1"}}, func(msg *Message) error { resp = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle() should not return error, got: %v", err)
 	}
@@ -278,7 +286,7 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 	t.Parallel()
 
 	connector := New()
-	_, err := connector.Handle(context.Background(), &Message{Content: "hello"}, nil)
+	err := connector.Handle(context.Background(), &Message{Content: "hello"}, nil)
 	if err == nil {
 		t.Fatal("Handle() error = nil, want error")
 	}

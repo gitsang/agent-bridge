@@ -17,11 +17,11 @@ func TestPluginUsesUserAsChatSessionID(t *testing.T) {
 	t.Parallel()
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), defaultConfig())
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, reply connect.ReplyFunc) error {
 		if got, want := req.Chat.SessionID, "chat-user"; got != want {
 			t.Fatalf("chat session = %q, want %q", got, want)
 		}
-		return &connect.Message{Content: "ok"}, nil
+		return reply(&connect.Message{Content: "ok"})
 	})
 
 	body := []byte(`{"model":"opencode-connect","user":"chat-user","messages":[{"role":"user","content":"hello"}]}`)
@@ -40,9 +40,9 @@ func TestPluginDoesNotPersistAnonymousSession(t *testing.T) {
 
 	var seen []string
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), defaultConfig())
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, reply connect.ReplyFunc) error {
 		seen = append(seen, req.Chat.SessionID)
-		return &connect.Message{Content: "ok"}, nil
+		return reply(&connect.Message{Content: "ok"})
 	})
 
 	body := []byte(`{"model":"opencode-connect","messages":[{"role":"user","content":"hello"}]}`)

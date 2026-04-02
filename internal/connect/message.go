@@ -1,6 +1,6 @@
 package connect
 
-type SendFunc func(msg *Message) error
+type ReplyFunc func(msg *Message) error
 
 type Message struct {
 	Content  string          `json:"content"`

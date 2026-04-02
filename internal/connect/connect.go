@@ -56,44 +56,42 @@ func New(optfs ...OptionFunc) *OpencodeConnect {
 	return connector
 }
 
-func (c *OpencodeConnect) Handle(ctx context.Context, req *Message, send SendFunc) (*Message, error) {
+func (c *OpencodeConnect) Handle(ctx context.Context, req *Message, reply ReplyFunc) error {
 	if req == nil {
-		return nil, NewError(http.StatusBadRequest, "request is required")
+		return NewError(http.StatusBadRequest, "request is required")
 	}
 
 	if c.opencodeClient == nil {
-		return nil, NewError(http.StatusInternalServerError, "opencode client is required")
+		return NewError(http.StatusInternalServerError, "opencode client is required")
 	}
 
-	if send == nil {
-		send = func(*Message) error { return nil }
+	if reply == nil {
+		reply = func(*Message) error { return nil }
 	}
 
 	parsed, err := ParseInput(req.Content)
 	if err != nil {
-		return nil, NewError(http.StatusBadRequest, err.Error())
+		return NewError(http.StatusBadRequest, err.Error())
 	}
 
 	if parsed.Invocation != nil {
 		resp, err := c.handleCommand(ctx, req, parsed.Invocation)
 		if err != nil {
-			// Return error as message content instead of HTTP error
-			return &Message{
+			return reply(&Message{
 				Content: fmt.Sprintf("Error: %s", err.Error()),
 				Chat:    req.Chat,
-			}, nil
+			})
 		}
 		if resp.Chat.SessionID == "" {
 			resp.Chat = req.Chat
 		}
-		_ = send(resp)
-		return resp, nil
+		return reply(resp)
 	}
 
-	return c.handlePrompt(ctx, req, parsed.Content, send)
+	return c.handlePrompt(ctx, req, parsed.Content, reply)
 }
 
-func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, content string, send SendFunc) (*Message, error) {
+func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, content string, reply ReplyFunc) error {
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	state, hasState := c.conversationStore.Get(resolvedChatSessionID)
 
@@ -108,10 +106,10 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 			Workdir: resolvedWorkdir,
 		})
 		if err != nil {
-			return nil, NewError(http.StatusBadGateway, err.Error())
+			return NewError(http.StatusBadGateway, err.Error())
 		}
 		if createdSession == nil || strings.TrimSpace(createdSession.ID) == "" {
-			return nil, NewError(http.StatusBadGateway, "created session id is required")
+			return NewError(http.StatusBadGateway, "created session id is required")
 		}
 		resolvedSessionID = strings.TrimSpace(createdSession.ID)
 	}
@@ -135,11 +133,11 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 					Workdir:   firstNonEmpty(strings.TrimSpace(partial.Workdir), resolvedWorkdir),
 				},
 			}
-			_ = send(msg)
+			_ = reply(msg)
 		},
 	})
 	if err != nil {
-		return nil, NewError(http.StatusBadGateway, err.Error())
+		return NewError(http.StatusBadGateway, err.Error())
 	}
 
 	responseSessionID := strings.TrimSpace(result.SessionID)
@@ -181,7 +179,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		response.Chat = req.Chat
 	}
 
-	return response, nil
+	return reply(response)
 }
 
 func (c *OpencodeConnect) handleCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
