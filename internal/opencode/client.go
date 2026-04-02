@@ -28,6 +28,7 @@ type PromptRequest struct {
 	Model     string
 	Agent     string
 	Workdir   string
+	OnResult  func(result *PromptResult)
 }
 
 type CreateSessionRequest struct {
@@ -321,37 +322,60 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptResu
 	ticker := time.NewTicker(promptPollInterval)
 	defer ticker.Stop()
 
+	var lastReportedAt float64
+	var lastResult *PromptResult
+
 	for {
 		select {
 		case <-promptCtx.Done():
+			if lastResult != nil {
+				return lastResult, nil
+			}
 			return nil, promptCtx.Err()
 		case err := <-errorChan:
 			return nil, err
 		case resp := <-responseChan:
-			return c.buildPromptResultFromPromptResponse(promptCtx, resolvedSessionID, resolvedWorkdir, resp)
-		case <-ticker.C:
-			messageResp, done, err := c.pollPromptCompletion(promptCtx, resolvedSessionID, promptStart)
+			result, err := c.buildPromptResultFromPromptResponse(promptCtx, resolvedSessionID, resolvedWorkdir, resp)
 			if err != nil {
 				return nil, err
 			}
-			if !done || messageResp == nil {
-				continue
+			if request.OnResult != nil {
+				request.OnResult(result)
 			}
-			return c.buildPromptResultFromMessageResponse(promptCtx, resolvedSessionID, resolvedWorkdir, messageResp)
+			return result, nil
+		case <-ticker.C:
+			newResults, err := c.pollNewCompletedMessages(promptCtx, resolvedSessionID, promptStart, lastReportedAt)
+			if err != nil {
+				return nil, err
+			}
+			for _, messageResp := range newResults {
+				result, err := c.buildPromptResultFromMessageResponse(promptCtx, resolvedSessionID, resolvedWorkdir, messageResp)
+				if err != nil {
+					return nil, err
+				}
+				lastResult = result
+				lastReportedAt = messageResp.Info.AsUnion().(ocsdk.AssistantMessage).Time.Completed
+				if request.OnResult != nil {
+					request.OnResult(result)
+				}
+			}
+			if lastResult != nil && request.OnResult == nil {
+				return lastResult, nil
+			}
 		}
 	}
 }
 
-func (c *Client) pollPromptCompletion(ctx context.Context, sessionID string, promptStart float64) (*ocsdk.SessionMessageResponse, bool, error) {
+func (c *Client) pollNewCompletedMessages(ctx context.Context, sessionID string, promptStart float64, lastReportedAt float64) ([]*ocsdk.SessionMessageResponse, error) {
 	messages, err := c.client.Session.Messages(ctx, sessionID, ocsdk.SessionMessagesParams{})
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if messages == nil {
-		return nil, false, nil
+		return nil, nil
 	}
 
-	var latestAssistant *ocsdk.AssistantMessage
+	var candidates []ocsdk.AssistantMessage
 	for _, message := range *messages {
 		assistant, ok := message.Info.AsUnion().(ocsdk.AssistantMessage)
 		if !ok {
@@ -360,28 +384,32 @@ func (c *Client) pollPromptCompletion(ctx context.Context, sessionID string, pro
 		if assistant.Time.Created+0.001 < promptStart {
 			continue
 		}
-		if latestAssistant == nil || assistant.Time.Created > latestAssistant.Time.Created {
-			candidate := assistant
-			latestAssistant = &candidate
+		if assistant.Time.Completed <= lastReportedAt {
+			continue
 		}
+		if assistant.Error.Name != "" {
+			return nil, fmt.Errorf("prompt failed: %s", assistant.Error.Name)
+		}
+		if assistant.Time.Completed <= 0 {
+			continue
+		}
+		candidates = append(candidates, assistant)
 	}
 
-	if latestAssistant == nil {
-		return nil, false, nil
-	}
-	if latestAssistant.Error.Name != "" {
-		return nil, false, fmt.Errorf("prompt failed: %s", latestAssistant.Error.Name)
-	}
-	if latestAssistant.Time.Completed <= 0 {
-		return nil, false, nil
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Time.Completed < candidates[j].Time.Completed
+	})
+
+	results := make([]*ocsdk.SessionMessageResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		resp, err := c.client.Session.Message(ctx, sessionID, candidate.ID, ocsdk.SessionMessageParams{})
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, resp)
 	}
 
-	resp, err := c.client.Session.Message(ctx, sessionID, latestAssistant.ID, ocsdk.SessionMessageParams{})
-	if err != nil {
-		return nil, false, err
-	}
-
-	return resp, true, nil
+	return results, nil
 }
 
 func (c *Client) buildPromptResultFromPromptResponse(ctx context.Context, fallbackSessionID string, fallbackWorkdir string, response *ocsdk.SessionPromptResponse) (*PromptResult, error) {

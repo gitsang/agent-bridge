@@ -232,7 +232,16 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 					SessionID: chatSessionID,
 				},
 			}
-			resp, err := handle(context.Background(), &connectReq)
+
+			sendCount := 0
+			send := func(msg *connect.Message) error {
+				sendCount++
+				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
+				defer replyCancel()
+				return p.sendReply(replyCtx, token, msg)
+			}
+
+			_, err := handle(context.Background(), &connectReq, send)
 			if err != nil {
 				var connectError *connect.Error
 				if errors.As(err, &connectError) {
@@ -245,25 +254,16 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 						SessionID: chatSessionID,
 					},
 				}
+				replyErr = fmt.Errorf("handle: %w", err)
 				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
 				defer replyCancel()
-				replyErr = fmt.Errorf("handle: %w", err)
 				if sendErr := p.sendReply(replyCtx, token, errorResp); sendErr != nil {
 					replyLogger = replyLogger.With("send_error_reply_err", sendErr)
 				}
 				return
 			}
 
-			replyLogger = replyLogger.With(
-				"reply_message_length", len(resp.Content),
-				"opencode_session_id", strings.TrimSpace(resp.Opencode.SessionID),
-			)
-
-			replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
-			defer replyCancel()
-			if err := p.sendReply(replyCtx, token, resp); err != nil {
-				replyErr = fmt.Errorf("send reply: %w", err)
-			}
+			replyLogger = replyLogger.With("send_count", sendCount)
 		}()
 
 		writeJSON(w, http.StatusOK, map[string]any{

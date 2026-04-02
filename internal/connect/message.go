@@ -1,5 +1,7 @@
 package connect
 
+type SendFunc func(msg *Message) error
+
 type Message struct {
 	Content  string          `json:"content"`
 	Chat     ChatContext     `json:"chat,omitempty"`

@@ -56,13 +56,17 @@ func New(optfs ...OptionFunc) *OpencodeConnect {
 	return connector
 }
 
-func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, error) {
+func (c *OpencodeConnect) Handle(ctx context.Context, req *Message, send SendFunc) (*Message, error) {
 	if req == nil {
 		return nil, NewError(http.StatusBadRequest, "request is required")
 	}
 
 	if c.opencodeClient == nil {
 		return nil, NewError(http.StatusInternalServerError, "opencode client is required")
+	}
+
+	if send == nil {
+		send = func(*Message) error { return nil }
 	}
 
 	parsed, err := ParseInput(req.Content)
@@ -82,13 +86,14 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message) (*Message, e
 		if resp.Chat.SessionID == "" {
 			resp.Chat = req.Chat
 		}
+		_ = send(resp)
 		return resp, nil
 	}
 
-	return c.handlePrompt(ctx, req, parsed.Content)
+	return c.handlePrompt(ctx, req, parsed.Content, send)
 }
 
-func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, content string) (*Message, error) {
+func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, content string, send SendFunc) (*Message, error) {
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	state, hasState := c.conversationStore.Get(resolvedChatSessionID)
 
@@ -117,6 +122,21 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		Model:     resolvedModel,
 		Agent:     resolvedAgent,
 		Workdir:   resolvedWorkdir,
+		OnResult: func(partial *opencode.PromptResult) {
+			partialSessionID := firstNonEmpty(strings.TrimSpace(partial.SessionID), resolvedSessionID)
+			msg := &Message{
+				Content: strings.TrimSpace(partial.Reply),
+				Chat:    req.Chat,
+				Opencode: OpencodeContext{
+					SessionID: partialSessionID,
+					Title:     firstNonEmpty(strings.TrimSpace(partial.Title), strings.TrimSpace(req.Opencode.Title)),
+					Model:     firstNonEmpty(formatModelInfo(partial.ProviderID, partial.ModelID, partial.Mode), resolvedModel),
+					Agent:     resolvedAgent,
+					Workdir:   firstNonEmpty(strings.TrimSpace(partial.Workdir), resolvedWorkdir),
+				},
+			}
+			_ = send(msg)
+		},
 	})
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())

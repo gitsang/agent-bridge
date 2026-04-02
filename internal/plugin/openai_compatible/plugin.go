@@ -135,7 +135,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			},
 		}
 
-		resp, err := handle(r.Context(), &connectReq)
+		resp, err := handle(r.Context(), &connectReq, nil)
 		if err != nil {
 			status := http.StatusInternalServerError
 			var connectError *connect.Error

@@ -9,7 +9,7 @@ import (
 	"github.com/gitsang/opencode-connect/internal/connect"
 )
 
-type HandleFunc func(ctx context.Context, req *connect.Message) (*connect.Message, error)
+type HandleFunc func(ctx context.Context, req *connect.Message, send connect.SendFunc) (*connect.Message, error)
 
 type Plugin interface {
 	Name() string

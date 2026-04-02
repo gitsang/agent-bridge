@@ -17,7 +17,7 @@ func TestPluginUsesUserAsChatSessionID(t *testing.T) {
 	t.Parallel()
 
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), defaultConfig())
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
 		if got, want := req.Chat.SessionID, "chat-user"; got != want {
 			t.Fatalf("chat session = %q, want %q", got, want)
 		}
@@ -40,7 +40,7 @@ func TestPluginDoesNotPersistAnonymousSession(t *testing.T) {
 
 	var seen []string
 	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), defaultConfig())
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message) (*connect.Message, error) {
+	handler := plugin.newHTTPHandler(func(_ context.Context, req *connect.Message, _ connect.SendFunc) (*connect.Message, error) {
 		seen = append(seen, req.Chat.SessionID)
 		return &connect.Message{Content: "ok"}, nil
 	})
