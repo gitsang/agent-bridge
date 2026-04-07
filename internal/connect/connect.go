@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ type sessionClient interface {
 	ListAgents(ctx context.Context, workdir string) ([]opencode.AgentInfo, error)
 	GetSession(ctx context.Context, sessionID string) (*opencode.Session, error)
 	GetSessionMessages(ctx context.Context, sessionID string) ([]opencode.SessionMessage, error)
+	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*opencode.SessionMessage, error)
 	CreateSession(ctx context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error)
 	Prompt(ctx context.Context, request opencode.PromptRequest) (*opencode.PromptResult, error)
 }
@@ -23,8 +25,15 @@ type sessionClient interface {
 type OptionFunc func(*OpencodeConnect)
 
 type OpencodeConnect struct {
+	logger            *slog.Logger
 	opencodeClient    sessionClient
 	conversationStore ConversationStore
+}
+
+func WithLogger(logger *slog.Logger) OptionFunc {
+	return func(target *OpencodeConnect) {
+		target.logger = logger
+	}
 }
 
 func WithOpencodeClient(client sessionClient) OptionFunc {
@@ -47,6 +56,10 @@ func New(optfs ...OptionFunc) *OpencodeConnect {
 			continue
 		}
 		apply(connector)
+	}
+
+	if connector.logger == nil {
+		connector.logger = slog.Default()
 	}
 
 	if connector.conversationStore == nil {
@@ -289,18 +302,20 @@ func (c *OpencodeConnect) handleSessionCommand(ctx context.Context, req *Message
 			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
 		}
 
-		messages, err := c.opencodeClient.GetSessionMessages(ctx, targetSessionID)
-		if err == nil && len(messages) > 0 {
-			for i := len(messages) - 1; i >= 0; i-- {
-				if messages[i].Role == "assistant" {
-					lastProviderID = messages[i].ProviderID
-					lastModelID = messages[i].ModelID
-					lastMode = messages[i].Mode
-					if lastProviderID != "" || lastModelID != "" {
-						c.conversationStore.SetLastModelInfo(resolvedChatSessionID, lastProviderID, lastModelID, lastMode)
-					}
-					break
-				}
+		msg, err := c.opencodeClient.GetSessionLatestAssistantMessage(ctx, targetSessionID)
+		if err == nil && msg != nil {
+			c.logger.Debug("session latest assistant message",
+				slog.String("session_id", targetSessionID),
+				slog.String("id", msg.ID),
+				slog.String("provider_id", msg.ProviderID),
+				slog.String("model_id", msg.ModelID),
+				slog.String("mode", msg.Mode),
+			)
+			lastProviderID = msg.ProviderID
+			lastModelID = msg.ModelID
+			lastMode = msg.Mode
+			if lastProviderID != "" || lastModelID != "" {
+				c.conversationStore.SetLastModelInfo(resolvedChatSessionID, lastProviderID, lastModelID, lastMode)
 			}
 		}
 

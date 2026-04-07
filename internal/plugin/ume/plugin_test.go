@@ -131,6 +131,46 @@ func TestPluginSendsErrorReplyWhenHandlerFails(t *testing.T) {
 	}
 }
 
+func TestPluginSkipsErrorReplyAfterPartialMessageAborted(t *testing.T) {
+	t.Parallel()
+
+	sendRecorder := newSendRecorderServer()
+	defer sendRecorder.Close()
+
+	plugin := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), Config{SendURL: sendRecorder.URL})
+
+	handler := plugin.newHTTPHandler(func(_ context.Context, _ *connect.Message, reply connect.ReplyFunc) error {
+		if err := reply(&connect.Message{Content: "partial answer"}); err != nil {
+			return err
+		}
+		return connect.NewError(http.StatusBadGateway, "prompt failed: MessageAbortedError")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/?access_token=test-token", bytes.NewReader([]byte(`[{"body":"hello","msgId":3002,"msgType":"text","sessionId":1003}]`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if got, want := resp.Code, http.StatusOK; got != want {
+		t.Fatalf("response code = %d, want %d", got, want)
+	}
+
+	waitForCondition(t, func() bool {
+		return len(sendRecorder.Requests()) == 1
+	}, "record one partial reply request")
+
+	requests := sendRecorder.Requests()
+	if got, want := requests[0].Token, "test-token"; got != want {
+		t.Fatalf("send token = %q, want %q", got, want)
+	}
+	if strings.Contains(requests[0].Payload.Body, "Error: prompt failed: MessageAbortedError") {
+		t.Fatalf("reply body = %q, should not contain aborted error", requests[0].Payload.Body)
+	}
+	if !strings.Contains(requests[0].Payload.Body, "partial answer") {
+		t.Fatalf("reply body = %q, want contains %q", requests[0].Payload.Body, "partial answer")
+	}
+}
+
 func waitForCondition(t *testing.T, check func() bool, description string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

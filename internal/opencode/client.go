@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -218,7 +219,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*ocsdk.Sessi
 	return c.client.Session.Get(ctx, resolvedSessionID, ocsdk.SessionGetParams{})
 }
 
-func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]SessionMessage, error) {
+func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]ocsdk.SessionMessagesResponse, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -229,11 +230,26 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]Se
 		return nil, err
 	}
 	if resp == nil {
-		return []SessionMessage{}, nil
+		return []ocsdk.SessionMessagesResponse{}, nil
 	}
 
-	messages := make([]SessionMessage, 0, len(*resp))
-	for _, msg := range *resp {
+	return *resp, nil
+}
+
+func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]SessionMessage, error) {
+	raw, err := c.getSessionMessages(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	messages := make([]SessionMessage, 0, len(raw))
+	for i, msg := range raw {
+		slog.Debug("session message response",
+			slog.String("session_id", sessionID),
+			slog.Int("index", i),
+			slog.Any("info", msg.Info),
+			slog.Any("parts", msg.Parts),
+		)
 		messages = append(messages, SessionMessage{
 			ID:         strings.TrimSpace(msg.Info.ID),
 			ProviderID: strings.TrimSpace(msg.Info.ProviderID),
@@ -244,6 +260,34 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]Se
 	}
 
 	return messages, nil
+}
+
+func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*SessionMessage, error) {
+	raw, err := c.getSessionMessages(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := len(raw) - 1; i >= 0; i-- {
+		if raw[i].Info.Role != "assistant" {
+			continue
+		}
+		msg := SessionMessage{
+			ID:         strings.TrimSpace(raw[i].Info.ID),
+			ProviderID: strings.TrimSpace(raw[i].Info.ProviderID),
+			ModelID:    strings.TrimSpace(raw[i].Info.ModelID),
+			Mode:       strings.TrimSpace(raw[i].Info.Mode),
+			Role:       string(raw[i].Info.Role),
+		}
+		slog.Debug("session latest assistant message",
+			slog.String("session_id", sessionID),
+			slog.Any("info", raw[i].Info),
+			slog.Any("parts", raw[i].Parts),
+		)
+		return &msg, nil
+	}
+
+	return nil, nil
 }
 
 func (c *Client) CreateSession(ctx context.Context, request CreateSessionRequest) (*ocsdk.Session, error) {

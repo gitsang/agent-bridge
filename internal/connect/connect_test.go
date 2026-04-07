@@ -74,10 +74,8 @@ func TestHandleSessionAttachCommand(t *testing.T) {
 
 	store := NewMemoryConversationStore(0, 0)
 	client := &fakeSessionClient{
-		getSession: &opencode.Session{ID: "ses_target", Title: "Target", Directory: "/repo/target"},
-		getSessionMessages: []opencode.SessionMessage{
-			{ID: "msg-1", ProviderID: "openai", ModelID: "gpt-5.4", Mode: "build", Role: "assistant"},
-		},
+		getSession:             &opencode.Session{ID: "ses_target", Title: "Target", Directory: "/repo/target"},
+		latestAssistantMessage: &opencode.SessionMessage{ID: "msg-1", ProviderID: "openai", ModelID: "gpt-5.4", Mode: "build", Role: "assistant"},
 	}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
@@ -296,19 +294,20 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 }
 
 type fakeSessionClient struct {
-	promptResult       *opencode.PromptResult
-	createdSession     *opencode.Session
-	listSessions       []opencode.Session
-	listModels         []opencode.ModelInfo
-	listAgents         []opencode.AgentInfo
-	getSession         *opencode.Session
-	getSessionMessages []opencode.SessionMessage
-	getErr             error
-	createErr          error
-	promptErr          error
-	getSessionID       string
-	promptRequest      opencode.PromptRequest
-	createRequest      opencode.CreateSessionRequest
+	promptResult           *opencode.PromptResult
+	createdSession         *opencode.Session
+	listSessions           []opencode.Session
+	listModels             []opencode.ModelInfo
+	listAgents             []opencode.AgentInfo
+	getSession             *opencode.Session
+	getSessionMessages     []opencode.SessionMessage
+	latestAssistantMessage *opencode.SessionMessage
+	getErr                 error
+	createErr              error
+	promptErr              error
+	getSessionID           string
+	promptRequest          opencode.PromptRequest
+	createRequest          opencode.CreateSessionRequest
 }
 
 func (f *fakeSessionClient) ListSessions(context.Context, string) ([]opencode.Session, error) {
@@ -339,6 +338,10 @@ func (f *fakeSessionClient) GetSessionMessages(context.Context, string) ([]openc
 		return f.getSessionMessages, nil
 	}
 	return []opencode.SessionMessage{}, nil
+}
+
+func (f *fakeSessionClient) GetSessionLatestAssistantMessage(context.Context, string) (*opencode.SessionMessage, error) {
+	return f.latestAssistantMessage, nil
 }
 
 func (f *fakeSessionClient) CreateSession(_ context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error) {

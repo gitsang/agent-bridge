@@ -248,6 +248,11 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 					replyLogger = replyLogger.With("connect_status_code", connectError.StatusCode)
 				}
 
+				if sendCount > 0 && errors.As(err, &connectError) && connectError.StatusCode == http.StatusBadGateway && strings.Contains(err.Error(), "prompt failed: MessageAbortedError") {
+					replyLogger.Debug("skip sending ume error reply after partial response", "send_count", sendCount)
+					return
+				}
+
 				errorResp := &connect.Message{
 					Content: fmt.Sprintf("Error: %s", err.Error()),
 					Chat: connect.ChatContext{
