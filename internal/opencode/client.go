@@ -18,6 +18,7 @@ type Session = ocsdk.Session
 type Option func(*Options)
 
 type Options struct {
+	Logger   *slog.Logger
 	Username string
 	Password string
 	Timeout  time.Duration
@@ -69,11 +70,18 @@ type AgentInfo struct {
 }
 
 type Client struct {
+	logger  *slog.Logger
 	client  *ocsdk.Client
 	timeout time.Duration
 }
 
 const promptPollInterval = 2 * time.Second
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(target *Options) {
+		target.Logger = logger
+	}
+}
 
 func WithAuthentication(username, password string) Option {
 	return func(target *Options) {
@@ -100,6 +108,10 @@ func NewClient(baseURL string, options ...Option) *Client {
 		apply(&resolved)
 	}
 
+	if resolved.Logger == nil {
+		resolved.Logger = slog.Default()
+	}
+
 	timeout := resolved.Timeout
 	if timeout < 0 {
 		timeout = 10 * time.Minute
@@ -113,7 +125,7 @@ func NewClient(baseURL string, options ...Option) *Client {
 	}
 
 	sdkClient := ocsdk.NewClient(sdkOptions...)
-	return &Client{client: sdkClient, timeout: timeout}
+	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout}
 }
 
 func (c *Client) ListSessions(ctx context.Context, workdir string) ([]ocsdk.Session, error) {
@@ -244,7 +256,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]Se
 
 	messages := make([]SessionMessage, 0, len(raw))
 	for i, msg := range raw {
-		slog.Debug("session message response",
+		c.logger.Debug("session message response",
 			slog.String("session_id", sessionID),
 			slog.Int("index", i),
 			slog.Any("info", msg.Info),
@@ -279,7 +291,7 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 			Mode:       strings.TrimSpace(raw[i].Info.Mode),
 			Role:       string(raw[i].Info.Role),
 		}
-		slog.Debug("session latest assistant message",
+		c.logger.Debug("session latest assistant message",
 			slog.String("session_id", sessionID),
 			slog.Any("info", raw[i].Info),
 			slog.Any("parts", raw[i].Parts),

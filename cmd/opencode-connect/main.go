@@ -75,6 +75,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	// Dependency Injection
 	opencodeClient := opencode.NewClient(
 		c.Opencode.BaseURL,
+		opencode.WithLogger(logger),
 		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
 		opencode.WithTimeout(c.Opencode.Timeout),
 	)
@@ -169,7 +170,7 @@ func buildConversationStore(c Config) (connect.ConversationStore, error) {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		slog.Error("command failed", "error", err)
+		fmt.Fprintf(os.Stderr, "command failed: %v\n", err)
 		os.Exit(1)
 	}
 }
