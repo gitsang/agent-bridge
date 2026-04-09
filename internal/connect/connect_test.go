@@ -368,7 +368,7 @@ func (f *fakeSessionClient) Prompt(_ context.Context, request opencode.PromptReq
 	return opencode.NewPromptHandle(doneCh, nil), nil
 }
 
-func (f *fakeSessionClient) PollCompletedMessages(_ context.Context, _ string, _ float64, _ float64) ([]*opencode.PromptResult, error) {
+func (f *fakeSessionClient) PollMessagesAfter(_ context.Context, _ string, _ float64) ([]*opencode.PromptResult, error) {
 	if f.pollErr != nil {
 		return nil, f.pollErr
 	}

@@ -66,11 +66,12 @@ type PromptResult struct {
 }
 
 type SessionMessage struct {
-	ID         string
-	ProviderID string
-	ModelID    string
-	Mode       string
-	Role       string
+	ID          string
+	ProviderID  string
+	ModelID     string
+	Mode        string
+	Role        string
+	CompletedAt float64
 }
 
 type ModelInfo struct {
@@ -300,12 +301,17 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 		if raw[i].Info.Role != "assistant" {
 			continue
 		}
+		assistant, ok := raw[i].Info.AsUnion().(ocsdk.AssistantMessage)
+		if !ok {
+			continue
+		}
 		msg := SessionMessage{
-			ID:         strings.TrimSpace(raw[i].Info.ID),
-			ProviderID: strings.TrimSpace(raw[i].Info.ProviderID),
-			ModelID:    strings.TrimSpace(raw[i].Info.ModelID),
-			Mode:       strings.TrimSpace(raw[i].Info.Mode),
-			Role:       string(raw[i].Info.Role),
+			ID:          strings.TrimSpace(raw[i].Info.ID),
+			ProviderID:  strings.TrimSpace(raw[i].Info.ProviderID),
+			ModelID:     strings.TrimSpace(raw[i].Info.ModelID),
+			Mode:        strings.TrimSpace(raw[i].Info.Mode),
+			Role:        string(raw[i].Info.Role),
+			CompletedAt: assistant.Time.Completed,
 		}
 		c.logger.Debug("session latest assistant message",
 			slog.String("session_id", sessionID),
@@ -384,7 +390,7 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptHand
 	return &PromptHandle{done: doneCh, err: errCh}, nil
 }
 
-func (c *Client) PollCompletedMessages(ctx context.Context, sessionID string, promptStart float64, lastReportedAt float64) ([]*PromptResult, error) {
+func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*PromptResult, error) {
 	messages, err := c.client.Session.Messages(ctx, sessionID, ocsdk.SessionMessagesParams{})
 	if err != nil {
 		return nil, err
@@ -399,10 +405,7 @@ func (c *Client) PollCompletedMessages(ctx context.Context, sessionID string, pr
 		if !ok {
 			continue
 		}
-		if assistant.Time.Created+0.001 < promptStart {
-			continue
-		}
-		if assistant.Time.Completed <= lastReportedAt {
+		if assistant.Time.Completed <= afterCompletedAt {
 			continue
 		}
 		if assistant.Error.Name != "" {

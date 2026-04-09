@@ -21,7 +21,7 @@ type sessionClient interface {
 	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*opencode.SessionMessage, error)
 	CreateSession(ctx context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error)
 	Prompt(ctx context.Context, request opencode.PromptRequest) (*opencode.PromptHandle, error)
-	PollCompletedMessages(ctx context.Context, sessionID string, promptStart float64, lastReportedAt float64) ([]*opencode.PromptResult, error)
+	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*opencode.PromptResult, error)
 }
 
 type OptionFunc func(*OpencodeConnect)
@@ -129,7 +129,10 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		resolvedSessionID = strings.TrimSpace(createdSession.ID)
 	}
 
-	promptStart := float64(time.Now().UnixMilli()) / 1000
+	var afterCompletedAt float64
+	if latest, err := c.opencodeClient.GetSessionLatestAssistantMessage(ctx, resolvedSessionID); err == nil && latest != nil {
+		afterCompletedAt = latest.CompletedAt
+	}
 
 	handle, err := c.opencodeClient.Prompt(ctx, opencode.PromptRequest{
 		SessionID: resolvedSessionID,
@@ -145,7 +148,6 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 	ticker := time.NewTicker(opencode.PromptPollInterval)
 	defer ticker.Stop()
 
-	var lastReportedAt float64
 	var lastResult *opencode.PromptResult
 
 	for {
@@ -158,7 +160,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		case err := <-handle.Err():
 			return NewError(http.StatusBadGateway, err.Error())
 		case <-handle.Done():
-			results, err := c.opencodeClient.PollCompletedMessages(ctx, resolvedSessionID, promptStart, lastReportedAt)
+			results, err := c.opencodeClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}
@@ -174,7 +176,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 			}
 			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir, lastResult)
 		case <-ticker.C:
-			results, err := c.opencodeClient.PollCompletedMessages(ctx, resolvedSessionID, promptStart, lastReportedAt)
+			results, err := c.opencodeClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}
@@ -186,7 +188,7 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 				}
 			}
 			if lastResult != nil {
-				lastReportedAt = lastResult.CompletedAt
+				afterCompletedAt = lastResult.CompletedAt
 			}
 		}
 	}
