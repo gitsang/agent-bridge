@@ -3,6 +3,7 @@ package opencode
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -549,16 +550,54 @@ func (c *Client) resolveModel(ctx context.Context, model string, workdir string)
 func extractReply(parts []ocsdk.Part) string {
 	builder := strings.Builder{}
 
-	for _, part := range parts {
-		if part.Type != ocsdk.PartTypeText {
-			continue
+	appendText := func(prefix, text string) {
+		if text = strings.TrimSpace(text); text == "" {
+			return
 		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		if prefix != "" {
+			builder.WriteString(prefix)
+			builder.WriteString(" ")
+		}
+		builder.WriteString(text)
+	}
 
-		if text := strings.TrimSpace(part.Text); text != "" {
-			if builder.Len() > 0 {
-				builder.WriteString("\n")
+	for _, part := range parts {
+		switch part.Type {
+		case ocsdk.PartTypeText:
+			appendText("", part.Text)
+		case ocsdk.PartTypeReasoning:
+			appendText("[reasoning]", part.Text)
+		case ocsdk.PartTypeFile:
+			appendText("[file:", part.Filename+"]")
+		case ocsdk.PartTypeTool:
+			state, ok := part.State.(ocsdk.ToolPartState)
+			if !ok {
+				appendText("[tool:", part.Tool+"]")
+				break
 			}
-			builder.WriteString(text)
+			var inputStr string
+			if b, err := json.Marshal(state.Input); err == nil {
+				inputStr = string(b)
+			}
+			appendText(fmt.Sprintf("[tool: %s]", part.Tool), fmt.Sprintf("input=%s output=%s", inputStr, strings.TrimSpace(state.Output)))
+		case ocsdk.PartTypeStepStart:
+		case ocsdk.PartTypeStepFinish:
+			appendText("[step-finish]", part.Reason)
+		case ocsdk.PartTypeSnapshot:
+			appendText("[snapshot]", part.Snapshot)
+		case ocsdk.PartTypePatch:
+			if files, ok := part.Files.([]string); ok {
+				appendText("[patch]", strings.Join(files, ", "))
+			}
+		case ocsdk.PartTypeAgent:
+			appendText("[agent:", part.Name+"]")
+		case ocsdk.PartTypeRetry:
+			if e, ok := part.Error.(ocsdk.PartRetryPartError); ok {
+				appendText("[retry]", e.Data.Message)
+			}
 		}
 	}
 
