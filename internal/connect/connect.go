@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gitsang/opencode-connect/internal/opencode"
 )
@@ -19,7 +20,8 @@ type sessionClient interface {
 	GetSessionMessages(ctx context.Context, sessionID string) ([]opencode.SessionMessage, error)
 	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*opencode.SessionMessage, error)
 	CreateSession(ctx context.Context, request opencode.CreateSessionRequest) (*opencode.Session, error)
-	Prompt(ctx context.Context, request opencode.PromptRequest) (*opencode.PromptResult, error)
+	Prompt(ctx context.Context, request opencode.PromptRequest) (*opencode.PromptHandle, error)
+	PollCompletedMessages(ctx context.Context, sessionID string, promptStart float64, lastReportedAt float64) ([]*opencode.PromptResult, error)
 }
 
 type OptionFunc func(*OpencodeConnect)
@@ -106,7 +108,7 @@ func (c *OpencodeConnect) Handle(ctx context.Context, req *Message, reply ReplyF
 
 func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, content string, reply ReplyFunc) error {
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
-	state, hasState := c.conversationStore.Get(resolvedChatSessionID)
+	state, _ := c.conversationStore.Get(resolvedChatSessionID)
 
 	resolvedWorkdir := firstNonEmpty(strings.TrimSpace(req.Opencode.Workdir), strings.TrimSpace(state.DefaultWorkdir))
 	resolvedModel := firstNonEmpty(strings.TrimSpace(req.Opencode.Model), strings.TrimSpace(state.DefaultModel))
@@ -127,72 +129,67 @@ func (c *OpencodeConnect) handlePrompt(ctx context.Context, req *Message, conten
 		resolvedSessionID = strings.TrimSpace(createdSession.ID)
 	}
 
-	result, err := c.opencodeClient.Prompt(ctx, opencode.PromptRequest{
+	promptStart := float64(time.Now().UnixMilli()) / 1000
+
+	handle, err := c.opencodeClient.Prompt(ctx, opencode.PromptRequest{
 		SessionID: resolvedSessionID,
 		Content:   content,
 		Model:     resolvedModel,
 		Agent:     resolvedAgent,
 		Workdir:   resolvedWorkdir,
-		OnResult: func(partial *opencode.PromptResult) {
-			partialSessionID := firstNonEmpty(strings.TrimSpace(partial.SessionID), resolvedSessionID)
-			msg := &Message{
-				Content: strings.TrimSpace(partial.Reply),
-				Chat:    req.Chat,
-				Opencode: OpencodeContext{
-					SessionID: partialSessionID,
-					Title:     firstNonEmpty(strings.TrimSpace(partial.Title), strings.TrimSpace(req.Opencode.Title)),
-					Model:     firstNonEmpty(formatModelInfo(partial.ProviderID, partial.ModelID, partial.Mode), resolvedModel),
-					Agent:     resolvedAgent,
-					Workdir:   firstNonEmpty(strings.TrimSpace(partial.Workdir), resolvedWorkdir),
-				},
-			}
-			_ = reply(msg)
-		},
 	})
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
 	}
 
-	responseSessionID := strings.TrimSpace(result.SessionID)
-	if responseSessionID == "" {
-		responseSessionID = resolvedSessionID
-	}
+	ticker := time.NewTicker(opencode.PromptPollInterval)
+	defer ticker.Stop()
 
-	if resolvedChatSessionID != "" {
-		if responseSessionID != "" {
-			c.conversationStore.PutBinding(resolvedChatSessionID, responseSessionID)
-		}
-		if resolvedModel != "" {
-			c.conversationStore.SetDefaultModel(resolvedChatSessionID, resolvedModel)
-		}
-		if resolvedAgent != "" {
-			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
-		}
-		if resolvedWorkdir != "" {
-			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
-		}
-		if result.ProviderID != "" || result.ModelID != "" {
-			c.conversationStore.SetLastModelInfo(resolvedChatSessionID, result.ProviderID, result.ModelID, result.Mode)
+	var lastReportedAt float64
+	var lastResult *opencode.PromptResult
+
+	for {
+		select {
+		case <-ctx.Done():
+			if lastResult != nil {
+				return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir, lastResult)
+			}
+			return ctx.Err()
+		case err := <-handle.Err():
+			return NewError(http.StatusBadGateway, err.Error())
+		case <-handle.Done():
+			results, err := c.opencodeClient.PollCompletedMessages(ctx, resolvedSessionID, promptStart, lastReportedAt)
+			if err != nil {
+				return NewError(http.StatusBadGateway, err.Error())
+			}
+			for _, result := range results {
+				lastResult = result
+				msg := c.buildReplyMessage(req, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir, result)
+				if err := reply(msg); err != nil {
+					return err
+				}
+			}
+			if lastResult == nil {
+				return NewError(http.StatusBadGateway, "no reply received")
+			}
+			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir, lastResult)
+		case <-ticker.C:
+			results, err := c.opencodeClient.PollCompletedMessages(ctx, resolvedSessionID, promptStart, lastReportedAt)
+			if err != nil {
+				return NewError(http.StatusBadGateway, err.Error())
+			}
+			for _, result := range results {
+				lastResult = result
+				msg := c.buildReplyMessage(req, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir, result)
+				if err := reply(msg); err != nil {
+					return err
+				}
+			}
+			if lastResult != nil {
+				lastReportedAt = lastResult.CompletedAt
+			}
 		}
 	}
-
-	response := &Message{
-		Content: strings.TrimSpace(result.Reply),
-		Chat:    req.Chat,
-		Opencode: OpencodeContext{
-			SessionID: responseSessionID,
-			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Opencode.Title)),
-			Model:     firstNonEmpty(formatModelInfo(result.ProviderID, result.ModelID, result.Mode), resolvedModel),
-			Agent:     resolvedAgent,
-			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),
-		},
-	}
-
-	if !hasState && response.Chat.SessionID == "" {
-		response.Chat = req.Chat
-	}
-
-	return reply(response)
 }
 
 func (c *OpencodeConnect) handleCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
@@ -724,3 +721,41 @@ func formatModelInfo(providerID, modelID, mode string) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+func (c *OpencodeConnect) buildReplyMessage(req *Message, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *opencode.PromptResult) *Message {
+	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
+	return &Message{
+		Content: strings.TrimSpace(result.Reply),
+		Chat:    req.Chat,
+		Opencode: OpencodeContext{
+			SessionID: sessionID,
+			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Opencode.Title)),
+			Model:     firstNonEmpty(formatModelInfo(result.ProviderID, result.ModelID, result.Mode), resolvedModel),
+			Agent:     resolvedAgent,
+			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),
+		},
+	}
+}
+
+func (c *OpencodeConnect) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *opencode.PromptResult) error {
+	responseSessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
+	if resolvedChatSessionID != "" {
+		if responseSessionID != "" {
+			c.conversationStore.PutBinding(resolvedChatSessionID, responseSessionID)
+		}
+		if resolvedModel != "" {
+			c.conversationStore.SetDefaultModel(resolvedChatSessionID, resolvedModel)
+		}
+		if resolvedAgent != "" {
+			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
+		}
+		if resolvedWorkdir != "" {
+			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
+		}
+		if result.ProviderID != "" || result.ModelID != "" {
+			c.conversationStore.SetLastModelInfo(resolvedChatSessionID, result.ProviderID, result.ModelID, result.Mode)
+		}
+	}
+	return nil
+}
+

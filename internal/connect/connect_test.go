@@ -15,12 +15,13 @@ func TestHandleUsesConversationBindingForPrompt(t *testing.T) {
 	store.PutBinding("chat-1", "ses_bound")
 
 	client := &fakeSessionClient{
-		promptResult: &opencode.PromptResult{
-			Reply:     "hello",
-			SessionID: "ses_bound",
-			Title:     "Bound Session",
-			Model:     "openai/gpt-5.4",
-			Workdir:   "/tmp/project",
+		pollResults: []*opencode.PromptResult{
+			{
+				Reply:     "hello",
+				SessionID: "ses_bound",
+				Title:     "Bound Session",
+				Workdir:   "/tmp/project",
+			},
 		},
 	}
 
@@ -46,12 +47,13 @@ func TestHandleCreatesSessionWhenNoBinding(t *testing.T) {
 
 	client := &fakeSessionClient{
 		createdSession: &opencode.Session{ID: "ses_created", Title: "Created", Directory: "/repo/created"},
-		promptResult: &opencode.PromptResult{
-			Reply:     "hello",
-			SessionID: "ses_created",
-			Title:     "Created",
-			Model:     "openai/gpt-5.4",
-			Workdir:   "/repo/created",
+		pollResults: []*opencode.PromptResult{
+			{
+				Reply:     "hello",
+				SessionID: "ses_created",
+				Title:     "Created",
+				Workdir:   "/repo/created",
+			},
 		},
 	}
 
@@ -246,7 +248,7 @@ func TestHandleUsesConversationDefaultAgentForPrompt(t *testing.T) {
 	store.PutBinding("chat-1", "ses_bound")
 	store.SetDefaultAgent("chat-1", "quick")
 
-	client := &fakeSessionClient{promptResult: &opencode.PromptResult{Reply: "ok", SessionID: "ses_bound"}}
+	client := &fakeSessionClient{pollResults: []*opencode.PromptResult{{Reply: "ok", SessionID: "ses_bound"}}}
 	connector := New(WithOpencodeClient(client), WithConversationStore(store))
 
 	var resp *Message
@@ -294,7 +296,7 @@ func TestHandleRequiresOpencodeClient(t *testing.T) {
 }
 
 type fakeSessionClient struct {
-	promptResult           *opencode.PromptResult
+	pollResults            []*opencode.PromptResult
 	createdSession         *opencode.Session
 	listSessions           []opencode.Session
 	listModels             []opencode.ModelInfo
@@ -305,6 +307,7 @@ type fakeSessionClient struct {
 	getErr                 error
 	createErr              error
 	promptErr              error
+	pollErr                error
 	getSessionID           string
 	promptRequest          opencode.PromptRequest
 	createRequest          opencode.CreateSessionRequest
@@ -355,13 +358,24 @@ func (f *fakeSessionClient) CreateSession(_ context.Context, request opencode.Cr
 	return f.createdSession, nil
 }
 
-func (f *fakeSessionClient) Prompt(_ context.Context, request opencode.PromptRequest) (*opencode.PromptResult, error) {
+func (f *fakeSessionClient) Prompt(_ context.Context, request opencode.PromptRequest) (*opencode.PromptHandle, error) {
 	f.promptRequest = request
 	if f.promptErr != nil {
 		return nil, f.promptErr
 	}
-	if f.promptResult == nil {
-		return nil, fmt.Errorf("prompt result is required")
+	doneCh := make(chan struct{})
+	close(doneCh)
+	return opencode.NewPromptHandle(doneCh, nil), nil
+}
+
+func (f *fakeSessionClient) PollCompletedMessages(_ context.Context, _ string, _ float64, _ float64) ([]*opencode.PromptResult, error) {
+	if f.pollErr != nil {
+		return nil, f.pollErr
 	}
-	return f.promptResult, nil
+	results := f.pollResults
+	f.pollResults = nil // consume on first poll so the loop exits
+	if len(results) == 0 {
+		return nil, nil
+	}
+	return results, nil
 }
