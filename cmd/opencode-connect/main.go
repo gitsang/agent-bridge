@@ -85,7 +85,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	}
 	connector := connect.New(
 		connect.WithLogger(logger),
-		connect.WithOpencodeClient(opencodeClient),
+		connect.WithAgentClient(opencodeClient),
 		connect.WithConversationStore(conversationStore),
 	)
 
