@@ -391,9 +391,23 @@ func (c *Client) Prompt(ctx context.Context, request PromptRequest) (*PromptHand
 }
 
 func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*PromptResult, error) {
+	var results []*PromptResult
+	var retErr error
+	logger := c.logger.With(
+		"session_id", sessionID,
+		"after_completed_at", afterCompletedAt,
+	)
+	defer func() {
+		logger.Debug("poll messages after",
+			"results", len(results),
+			"err", retErr,
+		)
+	}()
+
 	messages, err := c.client.Session.Messages(ctx, sessionID, ocsdk.SessionMessagesParams{})
 	if err != nil {
-		return nil, err
+		retErr = err
+		return nil, retErr
 	}
 	if messages == nil {
 		return nil, nil
@@ -409,7 +423,8 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 			continue
 		}
 		if assistant.Error.Name != "" {
-			return nil, fmt.Errorf("prompt failed: %s", assistant.Error.Name)
+			retErr = fmt.Errorf("prompt failed: %s", assistant.Error.Name)
+			return nil, retErr
 		}
 		if assistant.Time.Completed <= 0 {
 			continue
@@ -421,15 +436,20 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 		return candidates[i].Time.Completed < candidates[j].Time.Completed
 	})
 
-	results := make([]*PromptResult, 0, len(candidates))
+	results = make([]*PromptResult, 0, len(candidates))
 	for _, candidate := range candidates {
 		resp, err := c.client.Session.Message(ctx, sessionID, candidate.ID, ocsdk.SessionMessageParams{})
 		if err != nil {
-			return nil, err
+			retErr = err
+			return nil, retErr
 		}
+		logger.With("message_id", candidate.ID).Debug("poll messages after: raw message response",
+			"response", resp,
+		)
 		result, err := c.buildPromptResult(ctx, sessionID, candidate.Time.Completed, resp)
 		if err != nil {
-			return nil, err
+			retErr = err
+			return nil, retErr
 		}
 		results = append(results, result)
 	}
