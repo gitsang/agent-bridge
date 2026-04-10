@@ -8,13 +8,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gitsang/agent-bridge/internal/agent"
 )
 
 type OptionFunc func(*AgentBridge)
 
 type AgentBridge struct {
 	logger            *slog.Logger
-	agentClient       AgentClient
+	agentClient       agent.Client
 	conversationStore ConversationStore
 }
 
@@ -24,7 +26,7 @@ func WithLogger(logger *slog.Logger) OptionFunc {
 	}
 }
 
-func WithAgentClient(client AgentClient) OptionFunc {
+func WithAgentClient(client agent.Client) OptionFunc {
 	return func(target *AgentBridge) {
 		target.agentClient = client
 	}
@@ -102,7 +104,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Agent.SessionID), strings.TrimSpace(state.AgentSessionID))
 
 	if resolvedSessionID == "" {
-		createdSession, err := c.agentClient.CreateSession(ctx, CreateSessionRequest{
+		createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{
 			Title:   strings.TrimSpace(req.Agent.Title),
 			Workdir: resolvedWorkdir,
 		})
@@ -120,7 +122,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		afterCompletedAt = latest.CompletedAt
 	}
 
-	handle, err := c.agentClient.Prompt(ctx, PromptRequest{
+	handle, err := c.agentClient.Prompt(ctx, agent.PromptRequest{
 		SessionID: resolvedSessionID,
 		Content:   content,
 		Model:     resolvedModel,
@@ -131,10 +133,10 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		return NewError(http.StatusBadGateway, err.Error())
 	}
 
-	ticker := time.NewTicker(promptPollInterval)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	var lastResult *PromptResult
+	var lastResult *agent.PromptResult
 
 	for {
 		select {
@@ -215,7 +217,7 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 	agentName := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
-	createdSession, err := c.agentClient.CreateSession(ctx, CreateSessionRequest{Title: title, Workdir: workdir})
+	createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{Title: title, Workdir: workdir})
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -710,7 +712,7 @@ func formatModelInfo(providerID, modelID, mode string) string {
 	return strings.Join(parts, " ")
 }
 
-func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *PromptResult) *Message {
+func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.PromptResult) *Message {
 	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	return &Message{
 		Content: strings.TrimSpace(result.Reply),
@@ -725,7 +727,7 @@ func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolve
 	}
 }
 
-func (c *AgentBridge) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *PromptResult) error {
+func (c *AgentBridge) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.PromptResult) error {
 	responseSessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	if resolvedChatSessionID != "" {
 		if responseSessionID != "" {

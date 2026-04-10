@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/bridge"
+	"github.com/gitsang/agent-bridge/internal/agent"
 	ocsdk "github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode-sdk-go/option"
 )
@@ -81,7 +81,7 @@ func NewClient(baseURL string, options ...Option) *Client {
 	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout}
 }
 
-func (c *Client) ListSessions(ctx context.Context, workdir string) ([]bridge.Session, error) {
+func (c *Client) ListSessions(ctx context.Context, workdir string) ([]agent.Session, error) {
 	params := ocsdk.SessionListParams{}
 	if strings.TrimSpace(workdir) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
@@ -92,17 +92,17 @@ func (c *Client) ListSessions(ctx context.Context, workdir string) ([]bridge.Ses
 		return nil, err
 	}
 	if resp == nil {
-		return []bridge.Session{}, nil
+		return []agent.Session{}, nil
 	}
 
-	sessions := make([]bridge.Session, 0, len(*resp))
+	sessions := make([]agent.Session, 0, len(*resp))
 	for _, s := range *resp {
 		sessions = append(sessions, toSession(s))
 	}
 	return sessions, nil
 }
 
-func (c *Client) ListModels(ctx context.Context, workdir string) ([]bridge.ModelInfo, error) {
+func (c *Client) ListModels(ctx context.Context, workdir string) ([]agent.ModelInfo, error) {
 	params := ocsdk.AppProvidersParams{}
 	if strings.TrimSpace(workdir) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
@@ -113,10 +113,10 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]bridge.Model
 		return nil, err
 	}
 	if resp == nil {
-		return []bridge.ModelInfo{}, nil
+		return []agent.ModelInfo{}, nil
 	}
 
-	models := make([]bridge.ModelInfo, 0)
+	models := make([]agent.ModelInfo, 0)
 	for _, provider := range resp.Providers {
 		providerID := strings.TrimSpace(provider.ID)
 		for modelID, model := range provider.Models {
@@ -127,7 +127,7 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]bridge.Model
 			if resolvedModelID == "" || providerID == "" {
 				continue
 			}
-			models = append(models, bridge.ModelInfo{
+			models = append(models, agent.ModelInfo{
 				ProviderID: providerID,
 				ModelID:    resolvedModelID,
 				Name:       strings.TrimSpace(model.Name),
@@ -145,7 +145,7 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]bridge.Model
 	return models, nil
 }
 
-func (c *Client) ListAgents(ctx context.Context, workdir string) ([]bridge.AgentInfo, error) {
+func (c *Client) ListAgents(ctx context.Context, workdir string) ([]agent.AgentInfo, error) {
 	params := ocsdk.AgentListParams{}
 	if strings.TrimSpace(workdir) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
@@ -156,16 +156,16 @@ func (c *Client) ListAgents(ctx context.Context, workdir string) ([]bridge.Agent
 		return nil, err
 	}
 	if resp == nil {
-		return []bridge.AgentInfo{}, nil
+		return []agent.AgentInfo{}, nil
 	}
 
-	agents := make([]bridge.AgentInfo, 0, len(*resp))
+	agents := make([]agent.AgentInfo, 0, len(*resp))
 	for _, item := range *resp {
 		resolvedName := strings.TrimSpace(item.Name)
 		if resolvedName == "" {
 			continue
 		}
-		agents = append(agents, bridge.AgentInfo{
+		agents = append(agents, agent.AgentInfo{
 			Name:        resolvedName,
 			Description: strings.TrimSpace(item.Description),
 			Mode:        strings.TrimSpace(string(item.Mode)),
@@ -179,7 +179,7 @@ func (c *Client) ListAgents(ctx context.Context, workdir string) ([]bridge.Agent
 	return agents, nil
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*bridge.Session, error) {
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -213,13 +213,13 @@ func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]oc
 	return *resp, nil
 }
 
-func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]bridge.SessionMessage, error) {
+func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]agent.SessionMessage, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make([]bridge.SessionMessage, 0, len(raw))
+	messages := make([]agent.SessionMessage, 0, len(raw))
 	for i, msg := range raw {
 		c.logger.Debug("session message response",
 			slog.String("session_id", sessionID),
@@ -227,7 +227,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]br
 			slog.Any("info", msg.Info),
 			slog.Any("parts", msg.Parts),
 		)
-		messages = append(messages, bridge.SessionMessage{
+		messages = append(messages, agent.SessionMessage{
 			ID:         strings.TrimSpace(msg.Info.ID),
 			ProviderID: strings.TrimSpace(msg.Info.ProviderID),
 			ModelID:    strings.TrimSpace(msg.Info.ModelID),
@@ -239,7 +239,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]br
 	return messages, nil
 }
 
-func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*bridge.SessionMessage, error) {
+func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.SessionMessage, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 		if !ok {
 			continue
 		}
-		msg := bridge.SessionMessage{
+		msg := agent.SessionMessage{
 			ID:          strings.TrimSpace(raw[i].Info.ID),
 			ProviderID:  strings.TrimSpace(raw[i].Info.ProviderID),
 			ModelID:     strings.TrimSpace(raw[i].Info.ModelID),
@@ -272,7 +272,7 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 	return nil, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, request bridge.CreateSessionRequest) (*bridge.Session, error) {
+func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionRequest) (*agent.Session, error) {
 	params := ocsdk.SessionNewParams{}
 	if strings.TrimSpace(request.Workdir) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(request.Workdir))
@@ -292,7 +292,7 @@ func (c *Client) CreateSession(ctx context.Context, request bridge.CreateSession
 	return &s, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, request bridge.PromptRequest) (*bridge.PromptHandle, error) {
+func (c *Client) Prompt(ctx context.Context, request agent.PromptRequest) (*agent.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(request.SessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -343,11 +343,11 @@ func (c *Client) Prompt(ctx context.Context, request bridge.PromptRequest) (*bri
 		}
 	}()
 
-	return bridge.NewPromptHandle(doneCh, errCh), nil
+	return agent.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*bridge.PromptResult, error) {
-	var results []*bridge.PromptResult
+func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*agent.PromptResult, error) {
+	var results []*agent.PromptResult
 	var retErr error
 	logger := c.logger.With(
 		"session_id", sessionID,
@@ -392,7 +392,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 		return candidates[i].Time.Completed < candidates[j].Time.Completed
 	})
 
-	results = make([]*bridge.PromptResult, 0, len(candidates))
+	results = make([]*agent.PromptResult, 0, len(candidates))
 	for _, candidate := range candidates {
 		resp, err := c.client.Session.Message(ctx, sessionID, candidate.ID, ocsdk.SessionMessageParams{})
 		if err != nil {
@@ -413,7 +413,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
-func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse) (*bridge.PromptResult, error) {
+func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse) (*agent.PromptResult, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
 	}
@@ -431,7 +431,7 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 		resultSessionID = strings.TrimSpace(fallbackSessionID)
 	}
 
-	result := &bridge.PromptResult{
+	result := &agent.PromptResult{
 		Reply:       extractReply(response.Parts),
 		SessionID:   resultSessionID,
 		ProviderID:  strings.TrimSpace(assistant.ProviderID),
@@ -445,7 +445,7 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	return result, nil
 }
 
-func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *bridge.PromptResult) {
+func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.PromptResult) {
 	if result == nil {
 		return
 	}
@@ -485,7 +485,7 @@ func (c *Client) resolveModel(ctx context.Context, model string, workdir string)
 		return "", "", err
 	}
 
-	matches := make([]bridge.ModelInfo, 0, 4)
+	matches := make([]agent.ModelInfo, 0, 4)
 	for _, candidate := range models {
 		if strings.EqualFold(strings.TrimSpace(candidate.ModelID), resolvedModel) {
 			matches = append(matches, candidate)
@@ -502,8 +502,8 @@ func (c *Client) resolveModel(ctx context.Context, model string, workdir string)
 	return strings.TrimSpace(matches[0].ProviderID), strings.TrimSpace(matches[0].ModelID), nil
 }
 
-func toSession(s ocsdk.Session) bridge.Session {
-	return bridge.Session{
+func toSession(s ocsdk.Session) agent.Session {
+	return agent.Session{
 		ID:        strings.TrimSpace(s.ID),
 		Title:     strings.TrimSpace(s.Title),
 		Directory: strings.TrimSpace(s.Directory),
