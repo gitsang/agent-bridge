@@ -582,10 +582,9 @@ func extractReply(parts []ocsdk.Part) string {
 			if b, err := json.Marshal(state.Input); err == nil {
 				inputStr = string(b)
 			}
-			appendText(fmt.Sprintf("[tool: %s]", part.Tool), fmt.Sprintf("input=%s output=%s", inputStr, strings.TrimSpace(state.Output)))
+			appendText(fmt.Sprintf("[tool: %s]", part.Tool), fmt.Sprintf("%s\n\n%s", inputStr, strings.TrimSpace(state.Output)))
 		case ocsdk.PartTypeStepStart:
 		case ocsdk.PartTypeStepFinish:
-			appendText("[step-finish]", part.Reason)
 		case ocsdk.PartTypeSnapshot:
 			appendText("[snapshot]", part.Snapshot)
 		case ocsdk.PartTypePatch:
