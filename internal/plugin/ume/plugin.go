@@ -456,14 +456,12 @@ func formatReply(message *bridge.Message) string {
 	model := strings.TrimSpace(message.Agent.Model)
 
 	builder := strings.Builder{}
-	builder.WriteString(title)
-	builder.WriteString("\n\n")
 	builder.WriteString(content)
 	builder.WriteString("\n\n---\n\n")
 	builder.WriteString("Directory: ")
 	builder.WriteString(directory)
 	builder.WriteString("\nSession: ")
-	builder.WriteString(sessionID)
+	fmt.Fprintf(&builder, "%s (%s)", title, sessionID)
 	builder.WriteString("\nModel: ")
 	builder.WriteString(model)
 
