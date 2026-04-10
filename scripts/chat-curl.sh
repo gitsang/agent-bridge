@@ -18,7 +18,7 @@ if [[ $# -ge 2 ]]; then
 fi
 
 PAYLOAD=$(jq -n \
-  --arg model "opencode-connect" \
+  --arg model "agent-bridge" \
   --arg message "$MESSAGE" \
   --arg sessionID "$SESSION_ID" \
   '{model: $model, messages: [{role: "user", content: $message}]} + (if $sessionID == "" then {} else {user: $sessionID} end)')

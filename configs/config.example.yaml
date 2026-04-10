@@ -18,7 +18,7 @@ plugins:
     ume:
       listen: ":24369"
 
-opencode:
+agent:
   baseurl: "http://127.0.0.1:4096"
   username: ""
   password: ""

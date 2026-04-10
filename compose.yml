@@ -1,10 +1,10 @@
 services:
-  opencode-connect:
-    image: opencode-connect:local
+  agent-bridge:
+    image: agent-bridge:local
     build:
       context: .
       dockerfile: Containerfile
-    container_name: opencode-connect
+    container_name: agent-bridge
     restart: unless-stopped
     network_mode: host
     volumes:
@@ -14,5 +14,5 @@ services:
       - /app/configs/config.yaml
 
 networks:
-  opencode:
+  agent:
     driver: bridge

@@ -1,49 +1,47 @@
-package connect
+package bridge
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
-type FileConversationStore struct {
+type MemoryConversationStore struct {
 	mu            sync.RWMutex
 	conversations map[string]ConversationState
 	ttl           time.Duration
 	maxItems      int
-	filePath      string
 }
 
-type persistedConversations struct {
-	Conversations map[string]ConversationState `json:"conversations"`
-}
+func NewMemoryConversationStore(ttl time.Duration, maxItems int) *MemoryConversationStore {
+	resolvedTTL := resolveConversationTTL(ttl)
+	resolvedMaxItems := resolveConversationMaxItems(maxItems)
 
-func NewFileConversationStore(filePath string, ttl time.Duration, maxItems int) (*FileConversationStore, error) {
-	resolvedFilePath := strings.TrimSpace(filePath)
-	if resolvedFilePath == "" {
-		return nil, fmt.Errorf("conversation store file path is required")
-	}
-
-	store := &FileConversationStore{
+	return &MemoryConversationStore{
 		conversations: map[string]ConversationState{},
-		ttl:           resolveConversationTTL(ttl),
-		maxItems:      resolveConversationMaxItems(maxItems),
-		filePath:      resolvedFilePath,
+		ttl:           resolvedTTL,
+		maxItems:      resolvedMaxItems,
 	}
-
-	if err := store.load(); err != nil {
-		return nil, err
-	}
-
-	return store, nil
 }
 
-func (s *FileConversationStore) Get(chatSessionID string) (ConversationState, bool) {
+func resolveConversationTTL(ttl time.Duration) time.Duration {
+	resolvedTTL := ttl
+	if resolvedTTL <= 0 {
+		resolvedTTL = defaultConversationTTL
+	}
+	return resolvedTTL
+}
+
+func resolveConversationMaxItems(maxItems int) int {
+	resolvedMaxItems := maxItems
+	if resolvedMaxItems <= 0 {
+		resolvedMaxItems = defaultConversationMaxItems
+	}
+	return resolvedMaxItems
+}
+
+func (s *MemoryConversationStore) Get(chatSessionID string) (ConversationState, bool) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return ConversationState{}, false
@@ -61,15 +59,13 @@ func (s *FileConversationStore) Get(chatSessionID string) (ConversationState, bo
 
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
-
 	return state, true
 }
 
-func (s *FileConversationStore) PutBinding(chatSessionID string, opencodeSessionID string) {
+func (s *MemoryConversationStore) PutBinding(chatSessionID string, agentSessionID string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
-	resolvedOpencodeSessionID := strings.TrimSpace(opencodeSessionID)
-	if resolvedChatSessionID == "" || resolvedOpencodeSessionID == "" {
+	resolvedAgentSessionID := strings.TrimSpace(agentSessionID)
+	if resolvedChatSessionID == "" || resolvedAgentSessionID == "" {
 		return
 	}
 
@@ -77,18 +73,16 @@ func (s *FileConversationStore) PutBinding(chatSessionID string, opencodeSession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
-	if strings.TrimSpace(state.OpencodeSessionID) == "" {
+	if strings.TrimSpace(state.AgentSessionID) == "" {
 		state.BoundAt = now
 	}
-	state.OpencodeSessionID = resolvedOpencodeSessionID
+	state.AgentSessionID = resolvedAgentSessionID
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetDefaultModel(chatSessionID string, model string) {
+func (s *MemoryConversationStore) SetDefaultModel(chatSessionID string, model string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -98,15 +92,13 @@ func (s *FileConversationStore) SetDefaultModel(chatSessionID string, model stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.DefaultModel = strings.TrimSpace(model)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetDefaultAgent(chatSessionID string, agent string) {
+func (s *MemoryConversationStore) SetDefaultAgent(chatSessionID string, agent string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -116,15 +108,13 @@ func (s *FileConversationStore) SetDefaultAgent(chatSessionID string, agent stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.DefaultAgent = strings.TrimSpace(agent)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetDefaultWorkdir(chatSessionID string, workdir string) {
+func (s *MemoryConversationStore) SetDefaultWorkdir(chatSessionID string, workdir string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -134,15 +124,13 @@ func (s *FileConversationStore) SetDefaultWorkdir(chatSessionID string, workdir 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.DefaultWorkdir = strings.TrimSpace(workdir)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetLastModelInfo(chatSessionID string, providerID, modelID, mode string) {
+func (s *MemoryConversationStore) SetLastModelInfo(chatSessionID string, providerID, modelID, mode string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -152,17 +140,15 @@ func (s *FileConversationStore) SetLastModelInfo(chatSessionID string, providerI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.LastProviderID = strings.TrimSpace(providerID)
 	state.LastModelID = strings.TrimSpace(modelID)
 	state.LastMode = strings.TrimSpace(mode)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) Delete(chatSessionID string) {
+func (s *MemoryConversationStore) Delete(chatSessionID string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -171,10 +157,9 @@ func (s *FileConversationStore) Delete(chatSessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.conversations, resolvedChatSessionID)
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) Touch(chatSessionID string) {
+func (s *MemoryConversationStore) Touch(chatSessionID string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -184,17 +169,15 @@ func (s *FileConversationStore) Touch(chatSessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
-
 	state, ok := s.conversations[resolvedChatSessionID]
 	if !ok {
 		return
 	}
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
-	s.persistLocked()
 }
 
-func (s *FileConversationStore) List() []ConversationState {
+func (s *MemoryConversationStore) List() []ConversationState {
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,7 +195,7 @@ func (s *FileConversationStore) List() []ConversationState {
 	return items
 }
 
-func (s *FileConversationStore) ensureStateLocked(chatSessionID string, now time.Time) ConversationState {
+func (s *MemoryConversationStore) ensureStateLocked(chatSessionID string, now time.Time) ConversationState {
 	state, ok := s.conversations[chatSessionID]
 	if !ok {
 		s.limitSizeLocked(now)
@@ -228,7 +211,7 @@ func (s *FileConversationStore) ensureStateLocked(chatSessionID string, now time
 	return state
 }
 
-func (s *FileConversationStore) cleanupExpiredLocked(now time.Time) {
+func (s *MemoryConversationStore) cleanupExpiredLocked(now time.Time) {
 	for key, state := range s.conversations {
 		seenAt := state.LastSeenAt
 		if seenAt.IsZero() {
@@ -240,7 +223,7 @@ func (s *FileConversationStore) cleanupExpiredLocked(now time.Time) {
 	}
 }
 
-func (s *FileConversationStore) limitSizeLocked(now time.Time) {
+func (s *MemoryConversationStore) limitSizeLocked(now time.Time) {
 	if len(s.conversations) < s.maxItems {
 		return
 	}
@@ -264,52 +247,4 @@ func (s *FileConversationStore) limitSizeLocked(now time.Time) {
 	if oldestKey != "" {
 		delete(s.conversations, oldestKey)
 	}
-}
-
-func (s *FileConversationStore) load() error {
-	data, err := os.ReadFile(s.filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read conversation store file: %w", err)
-	}
-
-	persisted := persistedConversations{}
-	if err := json.Unmarshal(data, &persisted); err != nil {
-		return fmt.Errorf("decode conversation store file: %w", err)
-	}
-
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if persisted.Conversations == nil {
-		s.conversations = map[string]ConversationState{}
-	} else {
-		s.conversations = persisted.Conversations
-	}
-	s.cleanupExpiredLocked(now)
-	for len(s.conversations) > s.maxItems {
-		s.limitSizeLocked(now)
-	}
-	return nil
-}
-
-func (s *FileConversationStore) persistLocked() {
-	persisted := persistedConversations{Conversations: s.conversations}
-	data, err := json.Marshal(persisted)
-	if err != nil {
-		return
-	}
-
-	parentDir := filepath.Dir(s.filePath)
-	if err := os.MkdirAll(parentDir, 0o755); err != nil {
-		return
-	}
-
-	tmpFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0o600); err != nil {
-		return
-	}
-	_ = os.Rename(tmpFile, s.filePath)
 }

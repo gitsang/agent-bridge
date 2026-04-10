@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gitsang/opencode-connect/internal/connect"
-	coreplugin "github.com/gitsang/opencode-connect/internal/plugin"
+	"github.com/gitsang/agent-bridge/internal/bridge"
+	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
 	"gopkg.in/yaml.v3"
 )
 
@@ -96,7 +96,7 @@ func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error 
 	return fmt.Errorf("listen openai-compatible http server: %w", err)
 }
 
-func (p *Plugin) Send(_ context.Context, _ *connect.Message) (*connect.Message, error) {
+func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
 	return nil, fmt.Errorf("openai-compatible plugin does not support proactive send")
 }
 
@@ -128,21 +128,21 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			return
 		}
 
-		connectReq := connect.Message{
+		connectReq := bridge.Message{
 			Content: message,
-			Chat: connect.ChatContext{
+			Chat: bridge.ChatContext{
 				SessionID: strings.TrimSpace(req.User),
 			},
 		}
 
-		var last *connect.Message
-		err = handle(r.Context(), &connectReq, func(msg *connect.Message) error {
+		var last *bridge.Message
+		err = handle(r.Context(), &connectReq, func(msg *bridge.Message) error {
 			last = msg
 			return nil
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
-			var connectError *connect.Error
+			var connectError *bridge.Error
 			if errors.As(err, &connectError) {
 				status = connectError.StatusCode
 			}
@@ -228,7 +228,7 @@ func parseOpenAIMessageContent(raw json.RawMessage) (string, error) {
 
 func newOpenAIChatCompletionResponse(model, content string) map[string]any {
 	if strings.TrimSpace(model) == "" {
-		model = "opencode-connect"
+		model = "agent-bridge"
 	}
 
 	return map[string]any{

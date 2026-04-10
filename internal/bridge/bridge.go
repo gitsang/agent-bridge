@@ -1,4 +1,4 @@
-package connect
+package bridge
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gitsang/opencode-connect/internal/opencode"
+	"github.com/gitsang/agent-bridge/internal/agent/opencode"
 )
 
 type AgentClient interface {
@@ -77,7 +77,7 @@ func (c *AgentBridge) Handle(ctx context.Context, req *Message, reply ReplyFunc)
 	}
 
 	if c.agentClient == nil {
-		return NewError(http.StatusInternalServerError, "opencode client is required")
+		return NewError(http.StatusInternalServerError, "agent client is required")
 	}
 
 	if reply == nil {
@@ -110,14 +110,14 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	state, _ := c.conversationStore.Get(resolvedChatSessionID)
 
-	resolvedWorkdir := firstNonEmpty(strings.TrimSpace(req.Opencode.Workdir), strings.TrimSpace(state.DefaultWorkdir))
-	resolvedModel := firstNonEmpty(strings.TrimSpace(req.Opencode.Model), strings.TrimSpace(state.DefaultModel))
-	resolvedAgent := firstNonEmpty(strings.TrimSpace(req.Opencode.Agent), strings.TrimSpace(state.DefaultAgent))
-	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Opencode.SessionID), strings.TrimSpace(state.OpencodeSessionID))
+	resolvedWorkdir := firstNonEmpty(strings.TrimSpace(req.Agent.Workdir), strings.TrimSpace(state.DefaultWorkdir))
+	resolvedModel := firstNonEmpty(strings.TrimSpace(req.Agent.Model), strings.TrimSpace(state.DefaultModel))
+	resolvedAgent := firstNonEmpty(strings.TrimSpace(req.Agent.Agent), strings.TrimSpace(state.DefaultAgent))
+	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Agent.SessionID), strings.TrimSpace(state.AgentSessionID))
 
 	if resolvedSessionID == "" {
 		createdSession, err := c.agentClient.CreateSession(ctx, opencode.CreateSessionRequest{
-			Title:   strings.TrimSpace(req.Opencode.Title),
+			Title:   strings.TrimSpace(req.Agent.Title),
 			Workdir: resolvedWorkdir,
 		})
 		if err != nil {
@@ -226,7 +226,7 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
 	workdir := strings.TrimSpace(invocation.Flags["work-dir"])
 	model := strings.TrimSpace(invocation.Flags["model"])
-	agent := strings.TrimSpace(invocation.Flags["agent"])
+	agentName := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
 	createdSession, err := c.agentClient.CreateSession(ctx, opencode.CreateSessionRequest{Title: title, Workdir: workdir})
@@ -243,8 +243,8 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 		if model != "" {
 			c.conversationStore.SetDefaultModel(resolvedChatSessionID, model)
 		}
-		if agent != "" {
-			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, agent)
+		if agentName != "" {
+			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, agentName)
 		}
 		if workdir != "" {
 			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, workdir)
@@ -254,11 +254,11 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 	return &Message{
 		Content: fmt.Sprintf("Created new session: %s", strings.TrimSpace(createdSession.ID)),
 		Chat:    req.Chat,
-		Opencode: OpencodeContext{
+		Agent: AgentContext{
 			SessionID: strings.TrimSpace(createdSession.ID),
 			Title:     firstNonEmpty(strings.TrimSpace(createdSession.Title), title),
 			Model:     model,
-			Agent:     agent,
+			Agent:     agentName,
 			Workdir:   firstNonEmpty(strings.TrimSpace(createdSession.Directory), workdir),
 		},
 	}, nil
@@ -278,11 +278,11 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			return nil, NewError(http.StatusBadRequest, "chat session id is required for /session attach")
 		}
 		if len(invocation.Positionals) < 3 {
-			return nil, NewError(http.StatusBadRequest, "opencode session id is required")
+			return nil, NewError(http.StatusBadRequest, "agent session id is required")
 		}
 		targetSessionID := strings.TrimSpace(invocation.Positionals[2])
 		if targetSessionID == "" {
-			return nil, NewError(http.StatusBadRequest, "opencode session id is required")
+			return nil, NewError(http.StatusBadRequest, "agent session id is required")
 		}
 		session, err := c.agentClient.GetSession(ctx, targetSessionID)
 		if err != nil {
@@ -326,7 +326,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		return &Message{
 			Content: fmt.Sprintf("Attached conversation to session %s", targetSessionID),
 			Chat:    req.Chat,
-			Opencode: OpencodeContext{
+			Agent: AgentContext{
 				SessionID: targetSessionID,
 				Title:     resolvedTitle,
 				Model:     modelInfo,
@@ -338,7 +338,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			return nil, NewError(http.StatusBadRequest, "chat session id is required for /session detach")
 		}
 		c.conversationStore.Delete(resolvedChatSessionID)
-		return &Message{Content: "Detached conversation from opencode session", Chat: req.Chat}, nil
+		return &Message{Content: "Detached conversation from agent session", Chat: req.Chat}, nil
 	case "current":
 		if resolvedChatSessionID == "" {
 			return nil, NewError(http.StatusBadRequest, "chat session id is required for /session current")
@@ -348,7 +348,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			return &Message{Content: "No session binding for current conversation", Chat: req.Chat}, nil
 		}
 
-		resolvedSessionID := strings.TrimSpace(state.OpencodeSessionID)
+		resolvedSessionID := strings.TrimSpace(state.AgentSessionID)
 		resolvedWorkdir := strings.TrimSpace(state.DefaultWorkdir)
 		resolvedTitle := ""
 
@@ -395,7 +395,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		return &Message{
 			Content: formatCurrentState(currentState),
 			Chat:    req.Chat,
-			Opencode: OpencodeContext{
+			Agent: AgentContext{
 				SessionID: resolvedSessionID,
 				Title:     resolvedTitle,
 				Model:     modelInfo,
@@ -438,7 +438,7 @@ func (c *AgentBridge) handleModelCommand(ctx context.Context, req *Message, invo
 			return nil, NewError(http.StatusBadRequest, "model is required")
 		}
 		c.conversationStore.SetDefaultModel(resolvedChatSessionID, resolvedModel)
-		return &Message{Content: fmt.Sprintf("Default model set to %s", resolvedModel), Chat: req.Chat, Opencode: OpencodeContext{Model: resolvedModel}}, nil
+		return &Message{Content: fmt.Sprintf("Default model set to %s", resolvedModel), Chat: req.Chat, Agent: AgentContext{Model: resolvedModel}}, nil
 	case "list":
 		models, err := c.listModels(ctx, c.resolveWorkdirForList(req))
 		if err != nil {
@@ -471,7 +471,7 @@ func (c *AgentBridge) handleAgentCommand(ctx context.Context, req *Message, invo
 			return nil, NewError(http.StatusBadRequest, "agent is required")
 		}
 		c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
-		return &Message{Content: fmt.Sprintf("Default agent set to %s", resolvedAgent), Chat: req.Chat, Opencode: OpencodeContext{Agent: resolvedAgent}}, nil
+		return &Message{Content: fmt.Sprintf("Default agent set to %s", resolvedAgent), Chat: req.Chat, Agent: AgentContext{Agent: resolvedAgent}}, nil
 	case "list":
 		agents, err := c.listAgents(ctx, c.resolveWorkdirForList(req))
 		if err != nil {
@@ -508,11 +508,11 @@ func (c *AgentBridge) handleWorkdirCommand(req *Message, invocation *Invocation)
 	}
 
 	c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, workdir)
-	return &Message{Content: fmt.Sprintf("Default workdir set to %s", workdir), Chat: req.Chat, Opencode: OpencodeContext{Workdir: workdir}}, nil
+	return &Message{Content: fmt.Sprintf("Default workdir set to %s", workdir), Chat: req.Chat, Agent: AgentContext{Workdir: workdir}}, nil
 }
 
 func (c *AgentBridge) resolveWorkdirForList(req *Message) string {
-	resolvedWorkdir := strings.TrimSpace(req.Opencode.Workdir)
+	resolvedWorkdir := strings.TrimSpace(req.Agent.Workdir)
 	if resolvedWorkdir != "" {
 		return resolvedWorkdir
 	}
@@ -617,17 +617,17 @@ func (c *AgentBridge) listAgents(ctx context.Context, workdir string) (string, e
 	}
 
 	builder := strings.Builder{}
-	for _, agent := range agents {
+	for _, agentItem := range agents {
 		builder.WriteString("- ")
-		builder.WriteString(strings.TrimSpace(agent.Name))
-		if strings.TrimSpace(agent.Mode) != "" {
+		builder.WriteString(strings.TrimSpace(agentItem.Name))
+		if strings.TrimSpace(agentItem.Mode) != "" {
 			builder.WriteString(" (")
-			builder.WriteString(strings.TrimSpace(agent.Mode))
+			builder.WriteString(strings.TrimSpace(agentItem.Mode))
 			builder.WriteString(")")
 		}
-		if strings.TrimSpace(agent.Description) != "" {
+		if strings.TrimSpace(agentItem.Description) != "" {
 			builder.WriteString(": ")
-			builder.WriteString(strings.TrimSpace(agent.Description))
+			builder.WriteString(strings.TrimSpace(agentItem.Description))
 		}
 		builder.WriteString("\n")
 	}
@@ -655,7 +655,7 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 	return strings.Join([]string{
 		"Available commands:",
 		"- /new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]",
-		"- /session attach <opencode-session-id>",
+		"- /session attach <agent-session-id>",
 		"- /session detach",
 		"- /session current",
 		"- /session list [--work-dir <path>]",
@@ -683,11 +683,11 @@ func formatCurrentState(state ConversationState) string {
 	builder.WriteString("Conversation state:")
 	builder.WriteString("\n- chat session: ")
 	builder.WriteString(strings.TrimSpace(state.ChatSessionID))
-	builder.WriteString("\n- opencode session: ")
-	if strings.TrimSpace(state.OpencodeSessionID) == "" {
+	builder.WriteString("\n- agent session: ")
+	if strings.TrimSpace(state.AgentSessionID) == "" {
 		builder.WriteString("(none)")
 	} else {
-		builder.WriteString(strings.TrimSpace(state.OpencodeSessionID))
+		builder.WriteString(strings.TrimSpace(state.AgentSessionID))
 	}
 	builder.WriteString("\n- default model: ")
 	if strings.TrimSpace(state.DefaultModel) == "" {
@@ -729,9 +729,9 @@ func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolve
 	return &Message{
 		Content: strings.TrimSpace(result.Reply),
 		Chat:    req.Chat,
-		Opencode: OpencodeContext{
+		Agent: AgentContext{
 			SessionID: sessionID,
-			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Opencode.Title)),
+			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Agent.Title)),
 			Model:     firstNonEmpty(formatModelInfo(result.ProviderID, result.ModelID, result.Mode), resolvedModel),
 			Agent:     resolvedAgent,
 			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),

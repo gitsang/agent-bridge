@@ -9,9 +9,9 @@ Implement the `ConversationStore + slash-command` architecture described in `doc
 In scope:
 
 - new `Message` contract with nested `Chat` and `Opencode` contexts
-- `connect`-owned `ConversationStore`
-- slash-command parser and registry in `connect`
-- migration of plugin-owned session binding into `connect`
+- `bridge`-owned `ConversationStore`
+- slash-command parser and registry in `bridge`
+- migration of plugin-owned session binding into `bridge`
 - opencode client request/response shaping for model/workdir/session context
 - tests and docs updates for the new architecture
 
@@ -23,12 +23,12 @@ Out of scope:
 
 ## Deliverables
 
-- updated `internal/connect/message.go` data model
-- `internal/connect/conversation_store.go` (and tests)
-- `internal/connect/command/*` parser and command handlers
-- updated `internal/connect/connect.go` orchestration flow
+- updated `internal/bridge/message.go` data model
+- `internal/bridge/conversation_store.go` (and tests)
+- `internal/bridge/command/*` parser and command handlers
+- updated `internal/bridge/connect.go` orchestration flow
 - updated plugin integrations for UME and OpenAI-compatible
-- updated `internal/opencode` APIs for prompt/session/model operations
+- updated `internal/agent` APIs for prompt/session/model operations
 - green test suite for modified packages
 
 ## Phase Plan
@@ -42,19 +42,19 @@ Out of scope:
 
 ### Tasks
 
-1. Update `internal/connect/message.go`
+1. Update `internal/bridge/message.go`
    - replace old fields with:
      - `Content string`
      - `Chat ChatContext`
-     - `Opencode OpencodeContext`
-   - define `ChatContext` and `OpencodeContext` types
+     - `Opencode AgentContext`
+   - define `ChatContext` and `AgentContext` types
    - remove legacy `Command` field
 
 2. Update direct call sites to compile
-   - `internal/connect/connect.go`
+   - `internal/bridge/connect.go`
    - `internal/plugin/openai_compatible/plugin.go`
    - `internal/plugin/ume/plugin.go`
-   - relevant tests in `internal/connect` and plugin packages
+   - relevant tests in `internal/bridge` and plugin packages
 
 3. Preserve behavior parity where possible
    - map old `Message` usage to new nested fields without functional changes yet
@@ -68,12 +68,12 @@ Out of scope:
 
 ### Goals
 
-- centralize chat-session state in `connect`
+- centralize chat-session state in `bridge`
 - stop plugin ownership of chat↔opencode binding
 
 ### Tasks
 
-1. Add `internal/connect/conversation_store.go`
+1. Add `internal/bridge/conversation_store.go`
    - define `ConversationState`
    - define `ConversationStore` interface
    - implement `MemoryConversationStore` with mutex + TTL + optional max-size policy
@@ -83,7 +83,7 @@ Out of scope:
    - add constructor option such as `WithConversationStore(...)`
    - default to memory store when not provided
 
-3. Move binding logic from plugin to `connect`
+3. Move binding logic from plugin to `bridge`
    - UME plugin: remove opencode binding lookup/writeback
    - OpenAI-compatible plugin: remove `lastSessionID`
    - both plugins pass `Chat.SessionID` only
@@ -94,25 +94,25 @@ Out of scope:
 
 ### Exit Criteria
 
-- `connect` resolves/reuses opencode sessions using `ConversationStore`
+- `bridge` resolves/reuses opencode sessions using `ConversationStore`
 - plugins no longer maintain chat↔opencode mapping state
 
 ## Phase 3: Slash-Command Runtime
 
 ### Goals
 
-- replace ad-hoc parser with a command runtime under `connect`
+- replace ad-hoc parser with a command runtime under `bridge`
 - support only slash-command syntax
 
 ### Tasks
 
 1. Create command parser module
-   - `internal/connect/command/parser.go`
+   - `internal/bridge/command/parser.go`
    - implement quote-aware tokenizer
    - parse command path, positional args, and flags (`--x y`, `--x=y`)
 
 2. Create command registry
-   - `internal/connect/command/registry.go`
+   - `internal/bridge/command/registry.go`
    - register handlers by normalized command path
    - generate command help metadata
 
@@ -127,10 +127,10 @@ Out of scope:
    - `workdir set`
    - `help`
 
-4. Integrate command dispatch in `connect.Handle`
+4. Integrate command dispatch in `bridge.Handle`
    - detect slash commands from `Message.Content`
    - dispatch via registry
-   - return standard `Message` output with `OpencodeContext`
+   - return standard `Message` output with `AgentContext`
 
 5. Remove legacy directive parser behavior
    - remove `@session:` / `@model:` handling
@@ -158,7 +158,7 @@ Out of scope:
    - list sessions with optional workdir filter
    - list models/providers (and optional workdir scope if supported)
 
-3. Update `connect` command handlers and plain message flow
+3. Update `bridge` command handlers and plain message flow
    - use new client APIs consistently
 
 ### Exit Criteria
@@ -176,7 +176,7 @@ Out of scope:
 
 1. Update UME response formatter
    - use `Message.Content`
-   - use `Message.Opencode.{Title,SessionID,Model,Workdir}`
+   - use `Message.Agent.{Title,SessionID,Model,Workdir}`
 
 2. Update OpenAI-compatible response conversion
    - return assistant text from `Message.Content`
@@ -273,7 +273,7 @@ Critical dependencies:
 - [ ] command handlers implemented
 - [ ] legacy head directives removed
 - [ ] opencode client APIs aligned
-- [ ] plugin rendering switched to `Message.Opencode`
+- [ ] plugin rendering switched to `Message.Agent`
 - [ ] tests updated and passing
 
 ## Suggested PR Strategy

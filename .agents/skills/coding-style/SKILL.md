@@ -3,7 +3,7 @@ name: coding-style
 description: 总结并应用 Go 代码规范与实现风格。只要用户提到修改这个仓库、按仓库风格实现功能、补充或重构 Go 代码、总结项目规范，或者希望代码“符合项目现有写法”，都应使用这个 skill。
 ---
 
-# Opencode Connect 代码风格
+# Agent Bridge 代码风格
 
 通用的 Go 实践，风格：包小而清晰、控制流直接、接口收敛、抽象克制、测试简单明确。
 
@@ -25,16 +25,16 @@ description: 总结并应用 Go 代码规范与实现风格。只要用户提到
 - 简单依赖注入优先使用直接作用于目标对象的 option function：
 
 ```go
-type OptionFunc func(*OpencodeConnect)
+type OptionFunc func(*AgentBridge)
 
-func WithOpencodeClient(client sessionClient) OptionFunc {
-	return func(target *OpencodeConnect) {
-		target.opencodeClient = client
+func WithAgentClient(client sessionClient) OptionFunc {
+	return func(target *AgentBridge) {
+		target.agentClient = client
 	}
 }
 
-func New(optfs ...OptionFunc) *OpencodeConnect {
-	connector := &OpencodeConnect{}
+func New(optfs ...OptionFunc) *AgentBridge {
+	connector := &AgentBridge{}
 	for _, apply := range optfs {
 		if apply == nil {
 			continue
@@ -116,8 +116,8 @@ if got, want := resp.SessionID, "existing-session"; got != want {
 
 ## 插件与装配模式
 
-- `cmd/opencode-connect` 只负责启动、配置、日志、依赖装配和进程生命周期。
-- 核心请求处理放在 `internal/connect`。
+- `cmd/agent-bridge` 只负责启动、配置、日志、依赖装配和进程生命周期。
+- 核心请求处理放在 `internal/bridge`。
 - 插件侧的协议/传输适配放在 `internal/plugin/<type>`。
 - `init()` 只用于插件注册，不要把通用应用装配写进去。
 - 插件构造显式接收基础设施依赖，不要偷偷读全局状态。
@@ -143,11 +143,11 @@ if got, want := resp.SessionID, "existing-session"; got != want {
 
 ## 仓库内参考文件
 
-- `internal/connect/connect.go`：轻量 functional options 与请求校验
-- `internal/opencode/client.go`：`WithXxx` 命名，以及在复杂度足够时使用 `Options` 聚合默认值
-- `internal/connect/parser.go`：显式解析与 guard clause 风格
-- `internal/connect/connect_test.go` 与 `internal/connect/parser_test.go`：测试命名、fake 写法、断言风格
-- `internal/plugin/chatapi/plugin.go`：插件构造、HTTP 适配、typed error 映射
-- `cmd/opencode-connect/main.go`：应用装配与 `errgroup` 生命周期管理
+- `internal/bridge/connect.go`：轻量 functional options 与请求校验
+- `internal/agent/client.go`：`WithXxx` 命名，以及在复杂度足够时使用 `Options` 聚合默认值
+- `internal/bridge/parser.go`：显式解析与 guard clause 风格
+- `internal/bridge/connect_test.go` 与 `internal/bridge/parser_test.go`：测试命名、fake 写法、断言风格
+- `internal/plugin/openai_compatible/plugin.go`：插件构造、HTTP 适配、typed error 映射
+- `cmd/agent-bridge/main.go`：应用装配与 `errgroup` 生命周期管理
 
 如果某个改动和这些模式冲突，默认选择更简单、更贴近现有代码的实现方式，除非上下文已经明确需要更强的抽象。

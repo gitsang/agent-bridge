@@ -6,15 +6,15 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/gitsang/opencode-connect/internal/connect"
+	"github.com/gitsang/agent-bridge/internal/bridge"
 )
 
-type HandleFunc func(ctx context.Context, req *connect.Message, reply connect.ReplyFunc) error
+type HandleFunc func(ctx context.Context, req *bridge.Message, reply bridge.ReplyFunc) error
 
 type Plugin interface {
 	Name() string
 	Serve(ctx context.Context, handle HandleFunc) error
-	Send(ctx context.Context, req *connect.Message) (*connect.Message, error)
+	Send(ctx context.Context, req *bridge.Message) (*bridge.Message, error)
 }
 
 type Infrastructure struct {

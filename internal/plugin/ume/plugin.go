@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gitsang/opencode-connect/internal/connect"
-	coreplugin "github.com/gitsang/opencode-connect/internal/plugin"
+	"github.com/gitsang/agent-bridge/internal/bridge"
+	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
 	"gopkg.in/yaml.v3"
 )
 
@@ -135,7 +135,7 @@ func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error 
 	return fmt.Errorf("listen ume http server: %w", err)
 }
 
-func (p *Plugin) Send(_ context.Context, _ *connect.Message) (*connect.Message, error) {
+func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
 	return nil, fmt.Errorf("ume plugin does not support proactive send")
 }
 
@@ -226,15 +226,15 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 				replyLogger.Debug("message handled and replied", "error", replyErr)
 			}()
 
-			connectReq := connect.Message{
+			connectReq := bridge.Message{
 				Content: message,
-				Chat: connect.ChatContext{
+				Chat: bridge.ChatContext{
 					SessionID: chatSessionID,
 				},
 			}
 
 			sendCount := 0
-			reply := func(msg *connect.Message) error {
+			reply := func(msg *bridge.Message) error {
 				sendCount++
 				replyCtx, replyCancel := context.WithTimeout(context.Background(), replyTimeout)
 				defer replyCancel()
@@ -243,7 +243,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 
 			err := handle(context.Background(), &connectReq, reply)
 			if err != nil {
-				var connectError *connect.Error
+				var connectError *bridge.Error
 				if errors.As(err, &connectError) {
 					replyLogger = replyLogger.With("connect_status_code", connectError.StatusCode)
 				}
@@ -253,9 +253,9 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 					return
 				}
 
-				errorResp := &connect.Message{
+				errorResp := &bridge.Message{
 					Content: fmt.Sprintf("Error: %s", err.Error()),
-					Chat: connect.ChatContext{
+					Chat: bridge.ChatContext{
 						SessionID: chatSessionID,
 					},
 				}
@@ -376,7 +376,7 @@ func (p *Plugin) limitSessionStatesLocked(now time.Time) {
 	}
 }
 
-func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.Message) error {
+func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Message) error {
 	if message == nil {
 		return fmt.Errorf("reply message is required")
 	}
@@ -448,12 +448,12 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *connect.M
 	return nil
 }
 
-func formatReply(message *connect.Message) string {
-	title := strings.TrimSpace(message.Opencode.Title)
+func formatReply(message *bridge.Message) string {
+	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
-	directory := strings.TrimSpace(message.Opencode.Workdir)
-	sessionID := strings.TrimSpace(message.Opencode.SessionID)
-	model := strings.TrimSpace(message.Opencode.Model)
+	directory := strings.TrimSpace(message.Agent.Workdir)
+	sessionID := strings.TrimSpace(message.Agent.SessionID)
+	model := strings.TrimSpace(message.Agent.Model)
 
 	builder := strings.Builder{}
 	builder.WriteString(title)
