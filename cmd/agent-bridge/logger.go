@@ -12,7 +12,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/gitsang/logi"
-	"github.com/gitsang/opencode-connect/pkg/util/timex"
+	"github.com/gitsang/agent-bridge/pkg/util/timex"
 	"github.com/natefinch/lumberjack"
 )
 

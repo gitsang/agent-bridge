@@ -4,46 +4,49 @@ services:
     container_name: opencode-server
     restart: unless-stopped
     networks:
-      - opencode
+      - agent
     ports:
-      - "4096:4096"
+      - "6144:6144"
     working_dir: /opencode
     volumes:
+      # config files
       - ./configs/opencode.json:/root/.config/opencode/opencode.json
       - ./configs/auth.json:/root/.local/share/opencode/auth.json
+      # storage
+      - ./share:/root/.local/share/opencode/
+      - ./cache:/root/.cache/opencode/
+      - ./workdir:/opencode
+    environment:
+      - HTTP_PROXY=http://ops.yl.c8g.top:7890
+      - HTTPS_PROXY=http://ops.yl.c8g.top:7890
     command:
       - serve
       - --hostname
       - 0.0.0.0
       - --port
-      - "4096"
+      - "6144"
       - --cors
-      - http://opencode-server:4096
-      - --cors
-      - https://opencode.dev1.yl.c8g.top
+      - http://opencode-server:6144
 
-  opencode-connect:
-    image: opencode-connect:local
+  agent-bridge:
+    image: agent-bridge:local
     build:
       context: .
       dockerfile: Containerfile
-    container_name: opencode-connect
+    container_name: agent-bridge
     restart: unless-stopped
     depends_on:
       - opencode-server
     networks:
-      - opencode
+      - agent
     ports:
-      - "8192:8192"
-      - "8193:8193"
+      - "9099:9099"
     volumes:
       - ./configs/config.container.yaml:/app/configs/config.yaml:ro
-    environment:
-      OPENCODE_CONNECT_OPENCODE_BASEURL: "http://opencode-server:4096"
     command:
       - -c
-      - /app/configs/config.yaml
+      - /app/configs/config.yml
 
 networks:
-  opencode:
+  agent:
     driver: bridge

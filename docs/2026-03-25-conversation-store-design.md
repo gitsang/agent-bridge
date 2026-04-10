@@ -2,14 +2,14 @@
 
 ## Goal
 
-Unify message handling around a single `connect`-owned model so that:
+Unify message handling around a single `bridge`-owned model so that:
 
 - plugins only handle chat transport concerns
-- `connect` owns all slash-command parsing and execution
-- `connect` owns chat-session to opencode-session binding
-- opencode-related state is grouped under `Message.Opencode`
+- `bridge` owns all slash-command parsing and execution
+- `bridge` owns chat-session to opencode-session binding
+- opencode-related state is grouped under `Message.Agent`
 
-This design replaces the current split where plugins partially own session binding and `connect` only handles a subset of message parsing.
+This design replaces the current split where plugins partially own session binding and `bridge` only handles a subset of message parsing.
 
 ## Agreed Data Model
 
@@ -17,14 +17,14 @@ This design replaces the current split where plugins partially own session bindi
 type Message struct {
 	Content  string          `json:"content"`
 	Chat     ChatContext     `json:"chat,omitempty"`
-	Opencode OpencodeContext `json:"opencode,omitempty"`
+	Opencode AgentContext `json:"opencode,omitempty"`
 }
 
 type ChatContext struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
-type OpencodeContext struct {
+type AgentContext struct {
 	SessionID string `json:"session_id,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Model     string `json:"model,omitempty"`
@@ -36,10 +36,10 @@ type OpencodeContext struct {
 
 - `Message.Content`: message body from user input or assistant output
 - `Message.Chat.SessionID`: chat-platform conversation identity supplied by the plugin
-- `Message.Opencode.SessionID`: opencode session identity resolved by `connect`
-- `Message.Opencode.Title`: opencode session title
-- `Message.Opencode.Model`: model override or resolved model metadata
-- `Message.Opencode.Workdir`: workdir override or resolved workdir metadata
+- `Message.Agent.SessionID`: opencode session identity resolved by `bridge`
+- `Message.Agent.Title`: opencode session title
+- `Message.Agent.Model`: model override or resolved model metadata
+- `Message.Agent.Workdir`: workdir override or resolved workdir metadata
 
 This removes the current ambiguity where one top-level `SessionID` field tries to represent different identities at different layers.
 
@@ -52,14 +52,14 @@ Plugins should only own transport-specific behavior:
 - decode inbound requests
 - extract chat context such as chat session ID
 - perform transport-specific deduplication and validation
-- pass normalized `Message` values into `connect`
+- pass normalized `Message` values into `bridge`
 - render and deliver responses using returned `Message`
 
 Plugins should no longer own chat-to-opencode binding.
 
 ### Connect Responsibilities
 
-`connect` should own all opencode-related orchestration:
+`bridge` should own all opencode-related orchestration:
 
 - slash-command parsing
 - slash-command dispatch and help generation
@@ -71,7 +71,7 @@ Plugins should no longer own chat-to-opencode binding.
 
 ### Opencode Client Responsibilities
 
-`internal/opencode` should remain a thin SDK wrapper:
+`internal/agent` should remain a thin SDK wrapper:
 
 - session operations
 - prompt operations
@@ -87,7 +87,7 @@ Use `ConversationStore` as the central state owner for each chat conversation.
 ```go
 type ConversationState struct {
 	ChatSessionID     string
-	OpencodeSessionID string
+	AgentSessionID string
 	DefaultModel      string
 	DefaultWorkdir    string
 	BoundAt           time.Time
@@ -111,7 +111,7 @@ type ConversationStore interface {
 
 ### Default Implementation
 
-Provide an in-memory implementation in `internal/connect/conversation_store.go`:
+Provide an in-memory implementation in `internal/bridge/conversation_store.go`:
 
 - `sync.RWMutex` protected map
 - TTL-based cleanup
@@ -152,7 +152,7 @@ Only slash-commands are supported. Head directives such as `@session:` and `@mod
 - creates a fresh opencode session
 - optionally applies model and workdir overrides
 - stores the created session into `ConversationStore` when `Chat.SessionID` is present
-- returns the resolved `OpencodeContext`
+- returns the resolved `AgentContext`
 
 #### `/session attach`
 
@@ -197,7 +197,7 @@ Only slash-commands are supported. Head directives such as `@session:` and `@mod
 
 ## Command Parser Design
 
-Implement a custom parser under `internal/connect/command/` rather than using Cobra.
+Implement a custom parser under `internal/bridge/command/` rather than using Cobra.
 
 ### Why Not Cobra
 
@@ -250,7 +250,7 @@ The registry should:
 
 ### Plain Message Flow
 
-For a non-command message, `connect.Handle` should execute this resolution order:
+For a non-command message, `bridge.Handle` should execute this resolution order:
 
 1. load conversation state using `Chat.SessionID`
 2. resolve effective opencode session:
@@ -264,7 +264,7 @@ For a non-command message, `connect.Handle` should execute this resolution order
    - request-level `req.Opencode.Workdir`
    - else conversation default workdir
 5. call opencode prompt
-6. return hydrated `Message` with full `OpencodeContext`
+6. return hydrated `Message` with full `AgentContext`
 7. update `ConversationStore` binding if `Chat.SessionID` is present
 
 ### Slash Command Flow
@@ -307,15 +307,15 @@ Keep in plugin:
 Remove from plugin:
 
 - `chatSessionID -> opencodeSessionID` binding ownership
-- session binding lookup before calling `connect`
+- session binding lookup before calling `bridge`
 - session binding write-back after response
 
-New request shape into `connect`:
+New request shape into `bridge`:
 
 ```go
-connect.Message{
+bridge.Message{
 	Content: message,
-	Chat: connect.ChatContext{
+	Chat: bridge.ChatContext{
 		SessionID: chatSessionID,
 	},
 }
@@ -329,20 +329,20 @@ Remove plugin-local anonymous session binding state:
 
 - remove `lastSessionID`
 - stop reusing session IDs inside the plugin
-- let `connect` own this state through `ConversationStore`
+- let `bridge` own this state through `ConversationStore`
 
-New request shape into `connect`:
+New request shape into `bridge`:
 
 ```go
-connect.Message{
+bridge.Message{
 	Content: message,
-	Chat: connect.ChatContext{
+	Chat: bridge.ChatContext{
 		SessionID: strings.TrimSpace(req.User),
 	},
 }
 ```
 
-If `req.User` is empty, the conversation is anonymous and `connect` may choose not to persist state for it.
+If `req.User` is empty, the conversation is anonymous and `bridge` may choose not to persist state for it.
 
 ## Opencode Client Changes
 
@@ -360,7 +360,7 @@ type PromptRequest struct {
 
 type PromptResult struct {
 	Reply    string
-	Session  OpencodeContext
+	Session  AgentContext
 }
 ```
 
@@ -402,7 +402,7 @@ Suggested status mapping:
 
 - replace the old `Message` layout with the new nested structure
 - introduce `ConversationStore`
-- update `connect` to consume `Chat.SessionID`
+- update `bridge` to consume `Chat.SessionID`
 - update plugins to pass `Chat.SessionID`
 - keep current minimal command set temporarily if needed
 
@@ -424,7 +424,7 @@ Suggested status mapping:
 
 - remove legacy `Message.Command`
 - remove plugin-owned binding logic and tests that depend on it
-- simplify plugin rendering around `Message.Opencode`
+- simplify plugin rendering around `Message.Agent`
 
 ## Testing Strategy
 
@@ -442,7 +442,7 @@ Suggested status mapping:
 ### Plugin Tests
 
 - UME still strips mentions and deduplicates by `msgId`
-- UME passes `Chat.SessionID` into `connect`
+- UME passes `Chat.SessionID` into `bridge`
 - OpenAI-compatible passes `User` into `Chat.SessionID`
 - plugin no longer stores opencode session bindings locally
 
@@ -465,7 +465,7 @@ These do not block the design, but should be decided during implementation:
 Adopt this design as the new architecture baseline:
 
 - nested `Message` context model
-- `ConversationStore` in `connect`
+- `ConversationStore` in `bridge`
 - slash-command-only parser and registry
 - plugin transport-only responsibilities
 

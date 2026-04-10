@@ -1,4 +1,4 @@
-module github.com/gitsang/opencode-connect
+module github.com/gitsang/agent-bridge
 
 go 1.25.5
 

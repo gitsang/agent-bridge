@@ -1,16 +1,18 @@
-package connect
+package bridge
+
+type ReplyFunc func(msg *Message) error
 
 type Message struct {
-	Content  string          `json:"content"`
-	Chat     ChatContext     `json:"chat,omitempty"`
-	Opencode OpencodeContext `json:"opencode,omitempty"`
+	Content string       `json:"content"`
+	Chat    ChatContext  `json:"chat,omitempty"`
+	Agent   AgentContext `json:"agent,omitempty"`
 }
 
 type ChatContext struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
-type OpencodeContext struct {
+type AgentContext struct {
 	SessionID string `json:"session_id,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Model     string `json:"model,omitempty"`

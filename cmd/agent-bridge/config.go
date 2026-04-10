@@ -9,13 +9,13 @@ type Config struct {
 		} `json:"handlers" yaml:"handlers"`
 		Providers map[string][]LogConfig `json:"providers" yaml:"providers"`
 	} `json:"log" yaml:"log"`
-	Plugins  map[string]any `json:"plugins" yaml:"plugins"`
-	Opencode struct {
-		BaseURL  string        `default:"http://127.0.0.1:4096" usage:"opencode server base URL" json:"base_url" yaml:"base_url"`
-		Username string        `default:"opencode" usage:"opencode server username" json:"username" yaml:"username"`
-		Password string        `usage:"opencode server password" json:"password" yaml:"password"`
-		Timeout  time.Duration `default:"0s" usage:"opencode request timeout, 0 means no timeout" json:"timeout" yaml:"timeout"`
-	} `json:"opencode" yaml:"opencode"`
+	Plugins map[string]any `json:"plugins" yaml:"plugins"`
+	Agent   struct {
+		BaseURL  string        `default:"http://127.0.0.1:4096" usage:"agent server base URL" json:"base_url" yaml:"base_url"`
+		Username string        `default:"agent" usage:"agent server username" json:"username" yaml:"username"`
+		Password string        `usage:"agent server password" json:"password" yaml:"password"`
+		Timeout  time.Duration `default:"0s" usage:"agent request timeout, 0 means no timeout" json:"timeout" yaml:"timeout"`
+	} `json:"agent" yaml:"agent"`
 	ConversationStore struct {
 		Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
 		FilePath string        `default:"data/conversation_store.json" usage:"conversation store file path when type=file" json:"file_path" yaml:"file_path"`

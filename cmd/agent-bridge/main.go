@@ -10,19 +10,19 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/gitsang/agent-bridge/internal/agent/opencode"
+	"github.com/gitsang/agent-bridge/internal/bridge"
+	"github.com/gitsang/agent-bridge/internal/plugin"
+	_ "github.com/gitsang/agent-bridge/internal/plugin/openai_compatible"
+	_ "github.com/gitsang/agent-bridge/internal/plugin/ume"
 	"github.com/gitsang/configer"
-	"github.com/gitsang/opencode-connect/internal/connect"
-	"github.com/gitsang/opencode-connect/internal/opencode"
-	"github.com/gitsang/opencode-connect/internal/plugin"
-	_ "github.com/gitsang/opencode-connect/internal/plugin/openai_compatible"
-	_ "github.com/gitsang/opencode-connect/internal/plugin/ume"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "opencode-connect",
-	Short: "Connect opencode to chat apps",
+	Use:   "agent-bridge",
+	Short: "Bridge agents to chat apps",
 	RunE:  Run,
 }
 
@@ -39,12 +39,12 @@ func init() {
 	cfger = configer.New(
 		configer.WithTemplate((*Config)(nil)),
 		configer.WithEnvBind(
-			configer.WithEnvPrefix("OPENCODE_CONNECT"),
+			configer.WithEnvPrefix("AGENT_BRIDGE"),
 			configer.WithEnvDelim("_"),
 		),
 		configer.WithFlagBind(
 			configer.WithCommand(rootCmd),
-			configer.WithFlagPrefix("occ"),
+			configer.WithFlagPrefix("ab"),
 			configer.WithFlagDelim("."),
 		),
 	)
@@ -73,18 +73,20 @@ func Run(cmd *cobra.Command, _ []string) error {
 	)
 
 	// Dependency Injection
-	opencodeClient := opencode.NewClient(
-		c.Opencode.BaseURL,
-		opencode.WithAuthentication(c.Opencode.Username, c.Opencode.Password),
-		opencode.WithTimeout(c.Opencode.Timeout),
+	agentClient := opencode.NewClient(
+		c.Agent.BaseURL,
+		opencode.WithLogger(logger),
+		opencode.WithAuthentication(c.Agent.Username, c.Agent.Password),
+		opencode.WithTimeout(c.Agent.Timeout),
 	)
 	conversationStore, err := buildConversationStore(c)
 	if err != nil {
 		return err
 	}
-	connector := connect.New(
-		connect.WithOpencodeClient(opencodeClient),
-		connect.WithConversationStore(conversationStore),
+	connector := bridge.New(
+		bridge.WithLogger(logger),
+		bridge.WithAgentClient(agentClient),
+		bridge.WithConversationStore(conversationStore),
 	)
 
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -154,13 +156,13 @@ func Run(cmd *cobra.Command, _ []string) error {
 	return group.Wait()
 }
 
-func buildConversationStore(c Config) (connect.ConversationStore, error) {
+func buildConversationStore(c Config) (bridge.ConversationStore, error) {
 	storeType := strings.ToLower(strings.TrimSpace(c.ConversationStore.Type))
 	switch storeType {
 	case "", "memory":
-		return connect.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
+		return bridge.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
 	case "file":
-		return connect.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
+		return bridge.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
 	default:
 		return nil, fmt.Errorf("unsupported conversation store type %q", c.ConversationStore.Type)
 	}
@@ -168,7 +170,7 @@ func buildConversationStore(c Config) (connect.ConversationStore, error) {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		slog.Error("command failed", "error", err)
+		fmt.Fprintf(os.Stderr, "command failed: %v\n", err)
 		os.Exit(1)
 	}
 }
