@@ -122,7 +122,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		afterCompletedAt = latest.CompletedAt
 	}
 
-	handle, err := c.agentClient.Prompt(ctx, agent.PromptRequest{
+	handle, err := c.agentClient.Prompt(ctx, agent.Message{
 		SessionID: resolvedSessionID,
 		Content:   content,
 		Model:     resolvedModel,
@@ -136,7 +136,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	var lastResult *agent.PromptResult
+	var lastResult *agent.Message
 
 	for {
 		select {
@@ -712,10 +712,10 @@ func formatModelInfo(providerID, modelID, mode string) string {
 	return strings.Join(parts, " ")
 }
 
-func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.PromptResult) *Message {
+func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.Message) *Message {
 	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	return &Message{
-		Content: strings.TrimSpace(result.Reply),
+		Content: strings.TrimSpace(result.Content),
 		Chat:    req.Chat,
 		Agent: AgentContext{
 			SessionID: sessionID,
@@ -727,7 +727,7 @@ func (c *AgentBridge) buildReplyMessage(req *Message, resolvedSessionID, resolve
 	}
 }
 
-func (c *AgentBridge) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.PromptResult) error {
+func (c *AgentBridge) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModel, resolvedAgent, resolvedWorkdir string, result *agent.Message) error {
 	responseSessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	if resolvedChatSessionID != "" {
 		if responseSessionID != "" {

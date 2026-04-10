@@ -213,13 +213,13 @@ func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]oc
 	return *resp, nil
 }
 
-func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]agent.SessionMessage, error) {
+func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]agent.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make([]agent.SessionMessage, 0, len(raw))
+	messages := make([]agent.Message, 0, len(raw))
 	for i, msg := range raw {
 		c.logger.Debug("session message response",
 			slog.String("session_id", sessionID),
@@ -227,7 +227,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]ag
 			slog.Any("info", msg.Info),
 			slog.Any("parts", msg.Parts),
 		)
-		messages = append(messages, agent.SessionMessage{
+		messages = append(messages, agent.Message{
 			ID:         strings.TrimSpace(msg.Info.ID),
 			ProviderID: strings.TrimSpace(msg.Info.ProviderID),
 			ModelID:    strings.TrimSpace(msg.Info.ModelID),
@@ -239,7 +239,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]ag
 	return messages, nil
 }
 
-func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.SessionMessage, error) {
+func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 		if !ok {
 			continue
 		}
-		msg := agent.SessionMessage{
+		msg := agent.Message{
 			ID:          strings.TrimSpace(raw[i].Info.ID),
 			ProviderID:  strings.TrimSpace(raw[i].Info.ProviderID),
 			ModelID:     strings.TrimSpace(raw[i].Info.ModelID),
@@ -292,7 +292,7 @@ func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionR
 	return &s, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, request agent.PromptRequest) (*agent.PromptHandle, error) {
+func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(request.SessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -346,8 +346,8 @@ func (c *Client) Prompt(ctx context.Context, request agent.PromptRequest) (*agen
 	return agent.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*agent.PromptResult, error) {
-	var results []*agent.PromptResult
+func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*agent.Message, error) {
+	var results []*agent.Message
 	var retErr error
 	logger := c.logger.With(
 		"session_id", sessionID,
@@ -392,7 +392,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 		return candidates[i].Time.Completed < candidates[j].Time.Completed
 	})
 
-	results = make([]*agent.PromptResult, 0, len(candidates))
+	results = make([]*agent.Message, 0, len(candidates))
 	for _, candidate := range candidates {
 		resp, err := c.client.Session.Message(ctx, sessionID, candidate.ID, ocsdk.SessionMessageParams{})
 		if err != nil {
@@ -413,7 +413,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
-func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse) (*agent.PromptResult, error) {
+func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse) (*agent.Message, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
 	}
@@ -431,8 +431,8 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 		resultSessionID = strings.TrimSpace(fallbackSessionID)
 	}
 
-	result := &agent.PromptResult{
-		Reply:       extractReply(response.Parts),
+	result := &agent.Message{
+		Content:     extractReply(response.Parts),
 		SessionID:   resultSessionID,
 		ProviderID:  strings.TrimSpace(assistant.ProviderID),
 		ModelID:     strings.TrimSpace(assistant.ModelID),
@@ -445,7 +445,7 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	return result, nil
 }
 
-func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.PromptResult) {
+func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.Message) {
 	if result == nil {
 		return
 	}

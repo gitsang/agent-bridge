@@ -13,12 +13,23 @@ type CreateSessionRequest struct {
 	Workdir string
 }
 
-type PromptRequest struct {
+type Message struct {
+	ID string
+
+	Workdir string
+
 	SessionID string
-	Content   string
-	Model     string
-	Agent     string
-	Workdir   string
+	Title     string
+
+	Role       string
+	Mode       string
+	Agent      string
+	Model      string
+	ProviderID string
+	ModelID    string
+
+	Content     string
+	CompletedAt float64
 }
 
 type PromptHandle struct {
@@ -36,26 +47,6 @@ func (h *PromptHandle) Done() <-chan struct{} {
 
 func (h *PromptHandle) Err() <-chan error {
 	return h.err
-}
-
-type PromptResult struct {
-	Reply       string
-	SessionID   string
-	Title       string
-	Workdir     string
-	ProviderID  string
-	ModelID     string
-	Mode        string
-	CompletedAt float64
-}
-
-type SessionMessage struct {
-	ID          string
-	ProviderID  string
-	ModelID     string
-	Mode        string
-	Role        string
-	CompletedAt float64
 }
 
 type ModelInfo struct {
@@ -81,8 +72,8 @@ type Client interface {
 	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
 
 	// Message
-	GetSessionMessages(ctx context.Context, sessionID string) ([]SessionMessage, error)
-	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*SessionMessage, error)
-	Prompt(ctx context.Context, request PromptRequest) (*PromptHandle, error)
-	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*PromptResult, error)
+	GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error)
+	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
+	Prompt(ctx context.Context, request Message) (*PromptHandle, error)
+	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*Message, error)
 }
