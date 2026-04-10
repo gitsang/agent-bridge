@@ -73,7 +73,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	)
 
 	// Dependency Injection
-	agentClient := opencode.NewClient(
+	opencodeClient := opencode.NewClient(
 		c.Agent.BaseURL,
 		opencode.WithLogger(logger),
 		opencode.WithAuthentication(c.Agent.Username, c.Agent.Password),
@@ -85,7 +85,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	}
 	connector := bridge.New(
 		bridge.WithLogger(logger),
-		bridge.WithAgentClient(agentClient),
+		bridge.WithAgentClient(opencodeClient),
 		bridge.WithConversationStore(conversationStore),
 	)
 
