@@ -71,13 +71,18 @@ type AgentInfo struct {
 }
 
 type Client interface {
-	ListSessions(ctx context.Context, workdir string) ([]Session, error)
+	// Model
 	ListModels(ctx context.Context, workdir string) ([]ModelInfo, error)
 	ListAgents(ctx context.Context, workdir string) ([]AgentInfo, error)
+
+	// Session
+	ListSessions(ctx context.Context, workdir string) ([]Session, error)
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
+	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
+
+	// Message
 	GetSessionMessages(ctx context.Context, sessionID string) ([]SessionMessage, error)
 	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*SessionMessage, error)
-	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
 	Prompt(ctx context.Context, request PromptRequest) (*PromptHandle, error)
 	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*PromptResult, error)
 }
