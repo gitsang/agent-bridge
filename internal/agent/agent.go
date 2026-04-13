@@ -48,19 +48,19 @@ type PromptOptions struct {
 
 type PromptOptionFunc func(*PromptOptions)
 
-func WithPromptDirectory(directory string) PromptOptionFunc {
+func PromptWithDirectory(directory string) PromptOptionFunc {
 	return func(target *PromptOptions) {
 		target.Directory = directory
 	}
 }
 
-func WithPromptAgent(agent string) PromptOptionFunc {
+func PromptWithAgent(agent string) PromptOptionFunc {
 	return func(target *PromptOptions) {
 		target.Agent = agent
 	}
 }
 
-func WithPromptModel(model ModelRef) PromptOptionFunc {
+func PromptWithModel(model ModelRef) PromptOptionFunc {
 	return func(target *PromptOptions) {
 		target.Model = model
 	}

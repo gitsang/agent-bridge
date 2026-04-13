@@ -185,13 +185,13 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 
 	optfs := make([]agent.PromptOptionFunc, 0, 3)
 	if resolvedDirectory != "" {
-		optfs = append(optfs, agent.WithPromptDirectory(resolvedDirectory))
+		optfs = append(optfs, agent.PromptWithDirectory(resolvedDirectory))
 	}
 	if resolvedAgent != "" {
-		optfs = append(optfs, agent.WithPromptAgent(resolvedAgent))
+		optfs = append(optfs, agent.PromptWithAgent(resolvedAgent))
 	}
 	if !resolvedModelRef.IsZero() {
-		optfs = append(optfs, agent.WithPromptModel(resolvedModelRef))
+		optfs = append(optfs, agent.PromptWithModel(resolvedModelRef))
 	}
 
 	handle, err := c.agentClient.Prompt(ctx, resolvedSessionID, content, optfs...)
