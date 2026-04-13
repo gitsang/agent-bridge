@@ -767,7 +767,7 @@ func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resol
 	}
 }
 
-func (c *AgentBridge) saveConversationState(req *Message, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir string, result *agent.Message) error {
+func (c *AgentBridge) saveConversationState(_ *Message, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir string, result *agent.Message) error {
 	responseSessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	if resolvedChatSessionID != "" {
 		if responseSessionID != "" {

@@ -4,8 +4,8 @@ type ReplyFunc func(msg *Message) error
 
 type Message struct {
 	Content string       `json:"content"`
-	Chat    ChatContext  `json:"chat,omitempty"`
-	Agent   AgentContext `json:"agent,omitempty"`
+	Chat    ChatContext  `json:"chat,omitzero"`
+	Agent   AgentContext `json:"agent,omitzero"`
 }
 
 type ChatContext struct {
