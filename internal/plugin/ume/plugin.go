@@ -435,7 +435,9 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Me
 		sendErr = fmt.Errorf("send ume reply: %w", err)
 		return sendErr
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		_ = httpResp.Body.Close()
+	}()
 
 	statusCode = httpResp.StatusCode
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
