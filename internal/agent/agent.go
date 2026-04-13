@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+// Model
+
 type ModelRef struct {
 	ProviderID string
 	ModelID    string
@@ -18,6 +20,22 @@ func (m ModelRef) String() string {
 	return fmt.Sprintf("%s/%s", m.ProviderID, m.ModelID)
 }
 
+type ModelInfo struct {
+	ModelRef
+	ProviderName string
+	ModelName    string
+}
+
+// Agent
+
+type AgentInfo struct {
+	Name        string
+	Description string
+	Mode        string
+}
+
+// Session
+
 type Session struct {
 	ID        string
 	Title     string
@@ -29,6 +47,8 @@ type CreateSessionRequest struct {
 	Directory string
 }
 
+// Message
+
 type Message struct {
 	ID          string
 	SessionID   string
@@ -39,6 +59,8 @@ type Message struct {
 	Agent string
 	Model ModelRef
 }
+
+// Prompt
 
 type PromptOptions struct {
 	Directory string
@@ -83,22 +105,12 @@ func (h *PromptHandle) Err() <-chan error {
 	return h.err
 }
 
-type ModelInfo struct {
-	ModelRef
-	ProviderName string
-	ModelName    string
-}
-
-type AgentInfo struct {
-	Name        string
-	Description string
-	Mode        string
-}
-
 type Client interface {
 	// Model
 	ListModels(ctx context.Context, directory string) ([]ModelInfo, error)
 	ResolveModel(ctx context.Context, spec, directory string) (ModelRef, error)
+
+	// Agents
 	ListAgents(ctx context.Context, directory string) ([]AgentInfo, error)
 
 	// Session
