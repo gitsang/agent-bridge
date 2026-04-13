@@ -183,13 +183,18 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		resolvedModelRef = ref
 	}
 
-	handle, err := c.agentClient.Prompt(ctx, agent.Message{
-		SessionID: resolvedSessionID,
-		Content:   content,
-		Model:     resolvedModelRef,
-		Agent:     resolvedAgent,
-		Directory: resolvedDirectory,
-	})
+	optfs := make([]agent.PromptOptionFunc, 0, 3)
+	if resolvedDirectory != "" {
+		optfs = append(optfs, agent.WithPromptDirectory(resolvedDirectory))
+	}
+	if resolvedAgent != "" {
+		optfs = append(optfs, agent.WithPromptAgent(resolvedAgent))
+	}
+	if !resolvedModelRef.IsZero() {
+		optfs = append(optfs, agent.WithPromptModel(resolvedModelRef))
+	}
+
+	handle, err := c.agentClient.Prompt(ctx, resolvedSessionID, content, optfs...)
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
 	}
@@ -342,7 +347,6 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		resolvedDirectory := ""
 		resolvedTitle := ""
 		var lastModel agent.ModelRef
-		var lastMode string
 		if session != nil {
 			resolvedDirectory = strings.TrimSpace(session.Directory)
 			resolvedTitle = strings.TrimSpace(session.Title)
@@ -358,12 +362,10 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 				slog.String("id", msg.ID),
 				slog.String("provider_id", msg.Model.ProviderID),
 				slog.String("model_id", msg.Model.ModelID),
-				slog.String("mode", msg.Mode),
 			)
 			lastModel = msg.Model
-			lastMode = msg.Mode
 			if !lastModel.IsZero() {
-				c.conversationStore.SetLastModel(resolvedChatSessionID, lastModel, lastMode)
+				c.conversationStore.SetLastModel(resolvedChatSessionID, lastModel)
 			}
 		}
 
@@ -754,15 +756,26 @@ func formatCurrentState(state ConversationState) string {
 func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory string, result *agent.Message) *Message {
 	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	modelInfo := firstNonEmpty(c.humanizeModel(ctx, result.Model, resolvedDirectory), resolvedModelSpec)
+	resolvedTitle := strings.TrimSpace(req.Agent.Title)
+	finalDirectory := resolvedDirectory
+
+	if sessionID != "" {
+		session, err := c.agentClient.GetSession(ctx, sessionID)
+		if err == nil && session != nil {
+			resolvedTitle = firstNonEmpty(strings.TrimSpace(session.Title), resolvedTitle)
+			finalDirectory = firstNonEmpty(strings.TrimSpace(session.Directory), finalDirectory)
+		}
+	}
+
 	return &Message{
 		Content: strings.TrimSpace(result.Content),
 		Chat:    req.Chat,
 		Agent: AgentContext{
 			SessionID: sessionID,
-			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Agent.Title)),
+			Title:     resolvedTitle,
 			Model:     modelInfo,
 			Agent:     resolvedAgent,
-			Directory: firstNonEmpty(strings.TrimSpace(result.Directory), resolvedDirectory),
+			Directory: finalDirectory,
 		},
 	}
 }
@@ -783,7 +796,7 @@ func (c *AgentBridge) saveConversationState(_ *Message, resolvedChatSessionID, r
 			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, resolvedDirectory)
 		}
 		if !result.Model.IsZero() {
-			c.conversationStore.SetLastModel(resolvedChatSessionID, result.Model, result.Mode)
+			c.conversationStore.SetLastModel(resolvedChatSessionID, result.Model)
 		}
 	}
 	return nil

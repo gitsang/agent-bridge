@@ -144,7 +144,7 @@ func (s *FileConversationStore) SetDefaultDirectory(chatSessionID string, direct
 	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef, mode string) {
+func (s *FileConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -157,7 +157,6 @@ func (s *FileConversationStore) SetLastModel(chatSessionID string, model agent.M
 
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.LastModel = model
-	state.LastMode = strings.TrimSpace(mode)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 	s.persistLocked()

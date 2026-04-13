@@ -49,3 +49,41 @@ type ModelInfo struct {
     ModelName    string
 }
 ```
+
+## Message
+
+消息数据应该只包含 **消息事实**，而不是 **控制参数**。
+
+比如：
+
+```go
+type Message struct {
+	ID        string
+	SessionID string
+	Role      string
+	Content   string
+
+	Agent string
+	Model ModelRef
+}
+```
+
+这里的 `ID` `Content` `Role` 都是属于消息事实，表示的就是这个消息的 ID 是什么，由谁发出，内容是什么。
+
+而 `Model` `Agent` 在请求和响应的场景，则可能具有不同的含义：
+在响应中表示的是消息事实，表示这个消息使用的是哪个模型，哪个 Agent 生成。
+而在请求中，由于大部分消息由用户发送，`Model` `Agent` 要么不具备含义（用户的输入不可能从概念上由模型生成），
+要么应该表示的是用户希望下一次的响应使用哪个模型，哪个 Agent 生成。
+这就是所谓的 **控制参数**
+
+对于需要控制参数的场景，我们不应该直接使用 Message 数据结构，我们应该保持 Message 数据的纯净。
+
+比如 `Prompt()` 函数，可能需要发送时设置 Agent/Model 等信息，就应该使用 Functional Options 等进行设置，而不能直接发送 Message 进行设置。
+
+```go
+// Bad
+Prompt(ctx context.Context, request *Message) (*PromptHandle, error)
+
+// Good
+Prompt(ctx context.Context, sessionID string, prompt string, optfs ...PromptOptionFunc) (*PromptHandle, error)
+```

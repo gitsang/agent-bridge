@@ -30,20 +30,41 @@ type CreateSessionRequest struct {
 }
 
 type Message struct {
-	ID string
-
-	Directory string
-
 	SessionID string
-	Title     string
 
 	Role  string
-	Mode  string
 	Agent string
 	Model ModelRef
 
+	ID          string
 	Content     string
 	CompletedAt float64
+}
+
+type PromptOptions struct {
+	Directory string
+	Agent     string
+	Model     ModelRef
+}
+
+type PromptOptionFunc func(*PromptOptions)
+
+func WithPromptDirectory(directory string) PromptOptionFunc {
+	return func(target *PromptOptions) {
+		target.Directory = directory
+	}
+}
+
+func WithPromptAgent(agent string) PromptOptionFunc {
+	return func(target *PromptOptions) {
+		target.Agent = agent
+	}
+}
+
+func WithPromptModel(model ModelRef) PromptOptionFunc {
+	return func(target *PromptOptions) {
+		target.Model = model
+	}
 }
 
 type PromptHandle struct {
@@ -89,6 +110,6 @@ type Client interface {
 	// Message
 	GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error)
 	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
-	Prompt(ctx context.Context, request Message) (*PromptHandle, error)
+	Prompt(ctx context.Context, sessionID string, prompt string, optfs ...PromptOptionFunc) (*PromptHandle, error)
 	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*Message, error)
 }

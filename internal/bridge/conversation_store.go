@@ -16,7 +16,6 @@ type ConversationState struct {
 	AgentSessionID string
 	DefaultModel   string
 	LastModel      agent.ModelRef
-	LastMode       string
 	DefaultAgent   string
 	DefaultDirectory string
 	BoundAt        time.Time
@@ -27,7 +26,7 @@ type ConversationStore interface {
 	Get(chatSessionID string) (ConversationState, bool)
 	PutBinding(chatSessionID string, agentSessionID string)
 	SetDefaultModel(chatSessionID string, model string)
-	SetLastModel(chatSessionID string, model agent.ModelRef, mode string)
+	SetLastModel(chatSessionID string, model agent.ModelRef)
 	SetDefaultAgent(chatSessionID string, agent string)
 	SetDefaultDirectory(chatSessionID string, directory string)
 	Delete(chatSessionID string)

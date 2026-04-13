@@ -234,7 +234,6 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]ag
 				ProviderID: strings.TrimSpace(msg.Info.ProviderID),
 				ModelID:    strings.TrimSpace(msg.Info.ModelID),
 			},
-			Mode: strings.TrimSpace(msg.Info.Mode),
 			Role: string(msg.Info.Role),
 		})
 	}
@@ -262,7 +261,6 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 				ProviderID: strings.TrimSpace(raw[i].Info.ProviderID),
 				ModelID:    strings.TrimSpace(raw[i].Info.ModelID),
 			},
-			Mode:        strings.TrimSpace(raw[i].Info.Mode),
 			Role:        string(raw[i].Info.Role),
 			CompletedAt: assistant.Time.Completed,
 		}
@@ -297,14 +295,22 @@ func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionR
 	return &s, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.PromptHandle, error) {
-	resolvedSessionID := strings.TrimSpace(request.SessionID)
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
 	}
-	resolvedContent := strings.TrimSpace(request.Content)
+	resolvedContent := strings.TrimSpace(prompt)
 	if resolvedContent == "" {
 		return nil, fmt.Errorf("message content is required")
+	}
+
+	resolvedOptions := agent.PromptOptions{}
+	for _, apply := range optfs {
+		if apply == nil {
+			continue
+		}
+		apply(&resolvedOptions)
 	}
 
 	parts := []ocsdk.SessionPromptParamsPartUnion{
@@ -315,13 +321,13 @@ func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.Prom
 	}
 
 	params := ocsdk.SessionPromptParams{Parts: ocsdk.F(parts)}
-	resolvedDirectory := strings.TrimSpace(request.Directory)
+	resolvedDirectory := strings.TrimSpace(resolvedOptions.Directory)
 	if resolvedDirectory != "" {
 		params.Directory = ocsdk.F(resolvedDirectory)
 	}
 
-	if !request.Model.IsZero() {
-		ref, err := c.ResolveModel(ctx, request.Model.String(), resolvedDirectory)
+	if !resolvedOptions.Model.IsZero() {
+		ref, err := c.ResolveModel(ctx, resolvedOptions.Model.String(), resolvedDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -331,7 +337,7 @@ func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.Prom
 		})
 	}
 
-	resolvedAgent := strings.TrimSpace(request.Agent)
+	resolvedAgent := strings.TrimSpace(resolvedOptions.Agent)
 	if resolvedAgent != "" {
 		params.Agent = ocsdk.F(resolvedAgent)
 	}
@@ -442,32 +448,10 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 			ProviderID: strings.TrimSpace(assistant.ProviderID),
 			ModelID:    strings.TrimSpace(assistant.ModelID),
 		},
-		Mode:        strings.TrimSpace(assistant.Mode),
 		CompletedAt: completedAt,
 	}
 
-	c.fillPromptResultSessionInfo(ctx, result)
-
 	return result, nil
-}
-
-func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.Message) {
-	if result == nil {
-		return
-	}
-	if strings.TrimSpace(result.SessionID) == "" {
-		return
-	}
-
-	session, err := c.client.Session.Get(ctx, result.SessionID, ocsdk.SessionGetParams{})
-	if err != nil || session == nil {
-		return
-	}
-
-	result.Title = strings.TrimSpace(session.Title)
-	if strings.TrimSpace(session.Directory) != "" {
-		result.Directory = strings.TrimSpace(session.Directory)
-	}
 }
 
 func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agent.ModelRef, error) {

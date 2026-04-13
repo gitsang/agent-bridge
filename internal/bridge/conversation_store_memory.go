@@ -132,7 +132,7 @@ func (s *MemoryConversationStore) SetDefaultDirectory(chatSessionID string, dire
 	s.conversations[resolvedChatSessionID] = state
 }
 
-func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef, mode string) {
+func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -144,7 +144,6 @@ func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model agent
 	s.cleanupExpiredLocked(now)
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
 	state.LastModel = model
-	state.LastMode = strings.TrimSpace(mode)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 }
