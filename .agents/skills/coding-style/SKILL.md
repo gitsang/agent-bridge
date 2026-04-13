@@ -60,7 +60,7 @@ ref: https://github.com/forrestchang/andrej-karpathy-skills/blob/main/skills/kar
 
 测试要求：每一行修改后的代码都应该直接追溯到用户的请求。
 
-### 4. 目标驱动型执行
+### 5. 目标驱动型执行
 
 定义成功标准。循环直至验证通过。
 
@@ -79,6 +79,11 @@ ref: https://github.com/forrestchang/andrej-karpathy-skills/blob/main/skills/kar
 ```
 
 明确的成功标准能让你独立循环迭代。而模糊的标准（“只要能行就行”）则需要不断澄清。
+
+### 6. 在重构时推翻一切
+
+当进行概念重构，或大规模代码重构时，除非用户明确指定兼容性要求，
+否则应该忽略所有的兼容性要求，从零开始设计最符合当下需求的架构。
 
 ## 代码形态
 
