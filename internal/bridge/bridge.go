@@ -170,7 +170,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	}
 
 	var afterCompletedAt float64
-	if latest, err := c.agentClient.GetSessionLatestAssistantMessage(ctx, resolvedSessionID); err == nil && latest != nil {
+	if latest, err := c.agentClient.GetLatestAssistantMessage(ctx, resolvedSessionID); err == nil && latest != nil {
 		afterCompletedAt = latest.CompletedAt
 	}
 
@@ -355,7 +355,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, resolvedDirectory)
 		}
 
-		msg, err := c.agentClient.GetSessionLatestAssistantMessage(ctx, targetSessionID)
+		msg, err := c.agentClient.GetLatestAssistantMessage(ctx, targetSessionID)
 		if err == nil && msg != nil {
 			c.logger.Debug("session latest assistant message",
 				slog.String("session_id", targetSessionID),
@@ -416,7 +416,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			}
 
 			if lastModel.IsZero() {
-				messages, err := c.agentClient.GetSessionMessages(ctx, resolvedSessionID)
+				messages, err := c.agentClient.GetMessages(ctx, resolvedSessionID)
 				if err == nil && len(messages) > 0 {
 					for i := len(messages) - 1; i >= 0; i-- {
 						if messages[i].Role == "assistant" {

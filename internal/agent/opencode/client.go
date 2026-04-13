@@ -241,7 +241,7 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]ag
 	return messages, nil
 }
 
-func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.Message, error) {
+func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err

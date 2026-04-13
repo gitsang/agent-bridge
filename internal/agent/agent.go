@@ -119,8 +119,8 @@ type Client interface {
 	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
 
 	// Message
-	GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error)
-	GetSessionLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
+	GetMessages(ctx context.Context, sessionID string) ([]Message, error)
+	GetLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
 	Prompt(ctx context.Context, sessionID string, prompt string, optfs ...PromptOptionFunc) (*PromptHandle, error)
 	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*Message, error)
 }
