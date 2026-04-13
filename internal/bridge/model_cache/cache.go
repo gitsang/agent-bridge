@@ -1,4 +1,4 @@
-package bridge
+package model_cache
 
 import (
 	"context"
@@ -7,23 +7,23 @@ import (
 	"github.com/gitsang/agent-bridge/internal/agent"
 )
 
-type modelCache struct {
+type Cache struct {
 	mu      sync.RWMutex
 	entries map[agent.ModelRef]agent.ModelInfo
 }
 
-func newModelCache() *modelCache {
-	return &modelCache{entries: map[agent.ModelRef]agent.ModelInfo{}}
+func New() *Cache {
+	return &Cache{entries: map[agent.ModelRef]agent.ModelInfo{}}
 }
 
-func (c *modelCache) lookup(ref agent.ModelRef) (agent.ModelInfo, bool) {
+func (c *Cache) lookup(ref agent.ModelRef) (agent.ModelInfo, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	info, ok := c.entries[ref]
 	return info, ok
 }
 
-func (c *modelCache) refresh(ctx context.Context, client agent.Client, directory string) error {
+func (c *Cache) refresh(ctx context.Context, client agent.Client, directory string) error {
 	models, err := client.ListModels(ctx, directory)
 	if err != nil {
 		return err
@@ -36,14 +36,14 @@ func (c *modelCache) refresh(ctx context.Context, client agent.Client, directory
 	return nil
 }
 
-func (c *AgentBridge) humanizeModel(ctx context.Context, ref agent.ModelRef, directory string) string {
+func (c *Cache) Humanize(ctx context.Context, ref agent.ModelRef, client agent.Client, directory string) string {
 	if ref.IsZero() {
 		return ""
 	}
-	info, ok := c.modelCache.lookup(ref)
+	info, ok := c.lookup(ref)
 	if !ok {
-		_ = c.modelCache.refresh(ctx, c.agentClient, directory)
-		info, ok = c.modelCache.lookup(ref)
+		_ = c.refresh(ctx, client, directory)
+		info, ok = c.lookup(ref)
 	}
 	if ok && info.ModelName != "" {
 		name := info.ModelName

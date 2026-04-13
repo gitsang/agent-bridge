@@ -70,7 +70,7 @@ func (c *AgentBridge) resolveDirectoryForList(req *Message) string {
 
 func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory string, result *agent.Message) *Message {
 	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
-	modelInfo := firstNonEmpty(c.humanizeModel(ctx, result.Model, resolvedDirectory), resolvedModelSpec)
+	modelInfo := firstNonEmpty(c.modelCache.Humanize(ctx, result.Model, c.agentClient, resolvedDirectory), resolvedModelSpec)
 	resolvedTitle := strings.TrimSpace(req.Agent.Title)
 	finalDirectory := resolvedDirectory
 

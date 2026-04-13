@@ -417,7 +417,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 
 		state, _ := c.conversationStore.Get(resolvedChatSessionID)
-		modelInfo := c.humanizeModel(ctx, lastModel, resolvedDirectory)
+		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agentClient, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
@@ -478,7 +478,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		currentState := state
 		currentState.DefaultDirectory = resolvedDirectory
 
-		modelInfo := c.humanizeModel(ctx, lastModel, resolvedDirectory)
+		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agentClient, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
