@@ -19,7 +19,7 @@ func defaultAgentBridge() *AgentBridge {
 		logger:            slog.Default(),
 		agentClient:       nil,
 		conversationStore: conversation_store.NewMemoryConversationStore(0, 0),
-		modelCache:        &modelCache{},
+		modelCache:        newModelCache(),
 	}
 }
 

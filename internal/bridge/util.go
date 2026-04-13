@@ -51,25 +51,6 @@ func formatCurrentState(state conversation_store.ConversationState) string {
 	return builder.String()
 }
 
-func (c *AgentBridge) humanizeModel(ctx context.Context, ref agent.ModelRef, directory string) string {
-	if ref.IsZero() {
-		return ""
-	}
-	info, ok := c.modelCache.lookup(ref)
-	if !ok {
-		_ = c.modelCache.refresh(ctx, c.agentClient, directory)
-		info, ok = c.modelCache.lookup(ref)
-	}
-	if ok && info.ModelName != "" {
-		name := info.ModelName
-		if info.ProviderName != "" {
-			name = info.ProviderName + "/" + name
-		}
-		return name
-	}
-	return ref.String()
-}
-
 func (c *AgentBridge) resolveDirectoryForList(req *Message) string {
 	resolvedDirectory := strings.TrimSpace(req.Agent.Directory)
 	if resolvedDirectory != "" {
