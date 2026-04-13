@@ -214,7 +214,7 @@ func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]oc
 	return *resp, nil
 }
 
-func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]agent.Message, error) {
+func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
