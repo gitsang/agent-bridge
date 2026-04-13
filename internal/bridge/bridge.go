@@ -31,8 +31,8 @@ func (c *modelCache) lookup(ref agent.ModelRef) (agent.ModelInfo, bool) {
 	return info, ok
 }
 
-func (c *modelCache) refresh(ctx context.Context, client agent.Client, workdir string) error {
-	models, err := client.ListModels(ctx, workdir)
+func (c *modelCache) refresh(ctx context.Context, client agent.Client, directory string) error {
+	models, err := client.ListModels(ctx, directory)
 	if err != nil {
 		return err
 	}
@@ -92,13 +92,13 @@ func New(optfs ...OptionFunc) *AgentBridge {
 	return connector
 }
 
-func (c *AgentBridge) humanizeModel(ctx context.Context, ref agent.ModelRef, workdir string) string {
+func (c *AgentBridge) humanizeModel(ctx context.Context, ref agent.ModelRef, directory string) string {
 	if ref.IsZero() {
 		return ""
 	}
 	info, ok := c.modelCache.lookup(ref)
 	if !ok {
-		_ = c.modelCache.refresh(ctx, c.agentClient, workdir)
+		_ = c.modelCache.refresh(ctx, c.agentClient, directory)
 		info, ok = c.modelCache.lookup(ref)
 	}
 	if ok && info.ModelName != "" {
@@ -150,15 +150,15 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	state, _ := c.conversationStore.Get(resolvedChatSessionID)
 
-	resolvedWorkdir := firstNonEmpty(strings.TrimSpace(req.Agent.Workdir), strings.TrimSpace(state.DefaultWorkdir))
+	resolvedDirectory := firstNonEmpty(strings.TrimSpace(req.Agent.Directory), strings.TrimSpace(state.DefaultDirectory))
 	resolvedModelSpec := firstNonEmpty(strings.TrimSpace(req.Agent.Model), strings.TrimSpace(state.DefaultModel))
 	resolvedAgent := firstNonEmpty(strings.TrimSpace(req.Agent.Agent), strings.TrimSpace(state.DefaultAgent))
 	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Agent.SessionID), strings.TrimSpace(state.AgentSessionID))
 
 	if resolvedSessionID == "" {
 		createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{
-			Title:   strings.TrimSpace(req.Agent.Title),
-			Workdir: resolvedWorkdir,
+			Title:     strings.TrimSpace(req.Agent.Title),
+			Directory: resolvedDirectory,
 		})
 		if err != nil {
 			return NewError(http.StatusBadGateway, err.Error())
@@ -176,7 +176,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 
 	var resolvedModelRef agent.ModelRef
 	if resolvedModelSpec != "" {
-		ref, err := c.agentClient.ResolveModel(ctx, resolvedModelSpec, resolvedWorkdir)
+		ref, err := c.agentClient.ResolveModel(ctx, resolvedModelSpec, resolvedDirectory)
 		if err != nil {
 			return NewError(http.StatusBadRequest, err.Error())
 		}
@@ -188,7 +188,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		Content:   content,
 		Model:     resolvedModelRef,
 		Agent:     resolvedAgent,
-		Workdir:   resolvedWorkdir,
+		Directory: resolvedDirectory,
 	})
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
@@ -203,7 +203,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		select {
 		case <-ctx.Done():
 			if lastResult != nil {
-				return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir, lastResult)
+				return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, lastResult)
 			}
 			return ctx.Err()
 		case err := <-handle.Err():
@@ -215,7 +215,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			for _, result := range results {
 				lastResult = result
-				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir, result)
+				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, result)
 				if err := reply(msg); err != nil {
 					return err
 				}
@@ -223,7 +223,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			if lastResult == nil {
 				return NewError(http.StatusBadGateway, "no reply received")
 			}
-			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir, lastResult)
+			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, lastResult)
 		case <-ticker.C:
 			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt)
 			if err != nil {
@@ -231,7 +231,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			for _, result := range results {
 				lastResult = result
-				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir, result)
+				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, result)
 				if err := reply(msg); err != nil {
 					return err
 				}
@@ -254,7 +254,7 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 	case "session":
 		return c.handleSessionCommand(ctx, req, invocation)
 	case "sessions":
-		listing, err := c.listSessions(ctx, c.resolveWorkdirForList(req))
+		listing, err := c.listSessions(ctx, c.resolveDirectoryForList(req))
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
@@ -263,8 +263,8 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 		return c.handleModelCommand(ctx, req, invocation)
 	case "agent":
 		return c.handleAgentCommand(ctx, req, invocation)
-	case "workdir":
-		return c.handleWorkdirCommand(req, invocation)
+	case "directory":
+		return c.handleDirectoryCommand(req, invocation)
 	case "help":
 		return &Message{Content: c.helpText(invocation), Chat: req.Chat}, nil
 	default:
@@ -273,12 +273,12 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 }
 
 func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
-	workdir := strings.TrimSpace(invocation.Flags["work-dir"])
+	directory := strings.TrimSpace(invocation.Flags["directory"])
 	model := strings.TrimSpace(invocation.Flags["model"])
 	agentName := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
-	createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{Title: title, Workdir: workdir})
+	createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{Title: title, Directory: directory})
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -295,8 +295,8 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 		if agentName != "" {
 			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, agentName)
 		}
-		if workdir != "" {
-			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, workdir)
+		if directory != "" {
+			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, directory)
 		}
 	}
 
@@ -308,7 +308,7 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 			Title:     firstNonEmpty(strings.TrimSpace(createdSession.Title), title),
 			Model:     model,
 			Agent:     agentName,
-			Workdir:   firstNonEmpty(strings.TrimSpace(createdSession.Directory), workdir),
+			Directory: firstNonEmpty(strings.TrimSpace(createdSession.Directory), directory),
 		},
 	}, nil
 }
@@ -339,16 +339,16 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 		c.conversationStore.PutBinding(resolvedChatSessionID, targetSessionID)
 
-		resolvedWorkdir := ""
+		resolvedDirectory := ""
 		resolvedTitle := ""
 		var lastModel agent.ModelRef
 		var lastMode string
 		if session != nil {
-			resolvedWorkdir = strings.TrimSpace(session.Directory)
+			resolvedDirectory = strings.TrimSpace(session.Directory)
 			resolvedTitle = strings.TrimSpace(session.Title)
 		}
-		if resolvedWorkdir != "" {
-			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
+		if resolvedDirectory != "" {
+			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, resolvedDirectory)
 		}
 
 		msg, err := c.agentClient.GetSessionLatestAssistantMessage(ctx, targetSessionID)
@@ -368,7 +368,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 
 		state, _ := c.conversationStore.Get(resolvedChatSessionID)
-		modelInfo := c.humanizeModel(ctx, lastModel, resolvedWorkdir)
+		modelInfo := c.humanizeModel(ctx, lastModel, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
@@ -379,7 +379,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 				SessionID: targetSessionID,
 				Title:     resolvedTitle,
 				Model:     modelInfo,
-				Workdir:   resolvedWorkdir,
+				Directory: resolvedDirectory,
 			},
 		}, nil
 	case "detach":
@@ -398,7 +398,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 
 		resolvedSessionID := strings.TrimSpace(state.AgentSessionID)
-		resolvedWorkdir := strings.TrimSpace(state.DefaultWorkdir)
+		resolvedDirectory := strings.TrimSpace(state.DefaultDirectory)
 		resolvedTitle := ""
 
 		lastModel := state.LastModel
@@ -410,7 +410,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			}
 			if session != nil {
 				resolvedTitle = strings.TrimSpace(session.Title)
-				resolvedWorkdir = firstNonEmpty(strings.TrimSpace(session.Directory), resolvedWorkdir)
+				resolvedDirectory = firstNonEmpty(strings.TrimSpace(session.Directory), resolvedDirectory)
 			}
 
 			if lastModel.IsZero() {
@@ -427,9 +427,9 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 
 		currentState := state
-		currentState.DefaultWorkdir = resolvedWorkdir
+		currentState.DefaultDirectory = resolvedDirectory
 
-		modelInfo := c.humanizeModel(ctx, lastModel, resolvedWorkdir)
+		modelInfo := c.humanizeModel(ctx, lastModel, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
@@ -441,15 +441,15 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 				SessionID: resolvedSessionID,
 				Title:     resolvedTitle,
 				Model:     modelInfo,
-				Workdir:   resolvedWorkdir,
+				Directory: resolvedDirectory,
 			},
 		}, nil
 	case "list":
-		workdir := strings.TrimSpace(invocation.Flags["work-dir"])
-		if workdir == "" {
-			workdir = c.resolveWorkdirForList(req)
+		directory := strings.TrimSpace(invocation.Flags["directory"])
+		if directory == "" {
+			directory = c.resolveDirectoryForList(req)
 		}
-		listing, err := c.listSessions(ctx, workdir)
+		listing, err := c.listSessions(ctx, directory)
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
@@ -482,7 +482,7 @@ func (c *AgentBridge) handleModelCommand(ctx context.Context, req *Message, invo
 		c.conversationStore.SetDefaultModel(resolvedChatSessionID, resolvedModel)
 		return &Message{Content: fmt.Sprintf("Default model set to %s", resolvedModel), Chat: req.Chat, Agent: AgentContext{Model: resolvedModel}}, nil
 	case "list":
-		models, err := c.listModels(ctx, c.resolveWorkdirForList(req))
+		models, err := c.listModels(ctx, c.resolveDirectoryForList(req))
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
@@ -515,7 +515,7 @@ func (c *AgentBridge) handleAgentCommand(ctx context.Context, req *Message, invo
 		c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
 		return &Message{Content: fmt.Sprintf("Default agent set to %s", resolvedAgent), Chat: req.Chat, Agent: AgentContext{Agent: resolvedAgent}}, nil
 	case "list":
-		agents, err := c.listAgents(ctx, c.resolveWorkdirForList(req))
+		agents, err := c.listAgents(ctx, c.resolveDirectoryForList(req))
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
@@ -525,38 +525,38 @@ func (c *AgentBridge) handleAgentCommand(ctx context.Context, req *Message, invo
 	}
 }
 
-func (c *AgentBridge) handleWorkdirCommand(req *Message, invocation *Invocation) (*Message, error) {
+func (c *AgentBridge) handleDirectoryCommand(req *Message, invocation *Invocation) (*Message, error) {
 	if len(invocation.Positionals) < 2 {
-		return nil, NewError(http.StatusBadRequest, "workdir subcommand is required")
+		return nil, NewError(http.StatusBadRequest, "directory subcommand is required")
 	}
 
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	if resolvedChatSessionID == "" {
-		return nil, NewError(http.StatusBadRequest, "chat session id is required for /workdir set")
+		return nil, NewError(http.StatusBadRequest, "chat session id is required for /directory set")
 	}
 
 	subcommand := strings.ToLower(strings.TrimSpace(invocation.Positionals[1]))
 	if subcommand != "set" {
-		return nil, NewError(http.StatusBadRequest, fmt.Sprintf("unsupported workdir command: %s", subcommand))
+		return nil, NewError(http.StatusBadRequest, fmt.Sprintf("unsupported directory command: %s", subcommand))
 	}
 
 	if len(invocation.Positionals) < 3 {
-		return nil, NewError(http.StatusBadRequest, "workdir is required")
+		return nil, NewError(http.StatusBadRequest, "directory is required")
 	}
 
-	workdir := strings.TrimSpace(invocation.Positionals[2])
-	if workdir == "" {
-		return nil, NewError(http.StatusBadRequest, "workdir is required")
+	directory := strings.TrimSpace(invocation.Positionals[2])
+	if directory == "" {
+		return nil, NewError(http.StatusBadRequest, "directory is required")
 	}
 
-	c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, workdir)
-	return &Message{Content: fmt.Sprintf("Default workdir set to %s", workdir), Chat: req.Chat, Agent: AgentContext{Workdir: workdir}}, nil
+	c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, directory)
+	return &Message{Content: fmt.Sprintf("Default directory set to %s", directory), Chat: req.Chat, Agent: AgentContext{Directory: directory}}, nil
 }
 
-func (c *AgentBridge) resolveWorkdirForList(req *Message) string {
-	resolvedWorkdir := strings.TrimSpace(req.Agent.Workdir)
-	if resolvedWorkdir != "" {
-		return resolvedWorkdir
+func (c *AgentBridge) resolveDirectoryForList(req *Message) string {
+	resolvedDirectory := strings.TrimSpace(req.Agent.Directory)
+	if resolvedDirectory != "" {
+		return resolvedDirectory
 	}
 
 	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
@@ -567,11 +567,11 @@ func (c *AgentBridge) resolveWorkdirForList(req *Message) string {
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(state.DefaultWorkdir)
+	return strings.TrimSpace(state.DefaultDirectory)
 }
 
-func (c *AgentBridge) listSessions(ctx context.Context, workdir string) (string, error) {
-	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(workdir))
+func (c *AgentBridge) listSessions(ctx context.Context, directory string) (string, error) {
+	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
@@ -623,8 +623,8 @@ func (c *AgentBridge) listSessions(ctx context.Context, workdir string) (string,
 	return strings.TrimSpace(builder.String()), nil
 }
 
-func (c *AgentBridge) listModels(ctx context.Context, workdir string) (string, error) {
-	models, err := c.agentClient.ListModels(ctx, strings.TrimSpace(workdir))
+func (c *AgentBridge) listModels(ctx context.Context, directory string) (string, error) {
+	models, err := c.agentClient.ListModels(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
@@ -647,8 +647,8 @@ func (c *AgentBridge) listModels(ctx context.Context, workdir string) (string, e
 	return strings.TrimSpace(builder.String()), nil
 }
 
-func (c *AgentBridge) listAgents(ctx context.Context, workdir string) (string, error) {
-	agents, err := c.agentClient.ListAgents(ctx, strings.TrimSpace(workdir))
+func (c *AgentBridge) listAgents(ctx context.Context, directory string) (string, error) {
+	agents, err := c.agentClient.ListAgents(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
@@ -680,31 +680,31 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 		topic := strings.ToLower(strings.TrimSpace(invocation.Positionals[1]))
 		switch topic {
 		case "new":
-			return "Usage: /new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]"
+			return "Usage: /new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]"
 		case "session":
-			return "Usage: /session <attach|detach|current|list> [args] [--work-dir <path>]"
+			return "Usage: /session <attach|detach|current|list> [args] [--directory <path>]"
 		case "model":
 			return "Usage: /model <set|list> [model]"
 		case "agent":
 			return "Usage: /agent <set|list> [name]"
-		case "workdir":
-			return "Usage: /workdir set <path>"
+		case "directory":
+			return "Usage: /directory set <path>"
 		}
 	}
 
 	return strings.Join([]string{
 		"Available commands:",
-		"- /new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]",
+		"- /new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]",
 		"- /session attach <agent-session-id>",
 		"- /session detach",
 		"- /session current",
-		"- /session list [--work-dir <path>]",
+		"- /session list [--directory <path>]",
 		"- /model set <provider/model|model>",
 		"- /model list",
 		"- /agent set <name>",
 		"- /agent list",
-		"- /workdir set <path>",
-		"- /help [new|session|model|agent|workdir]",
+		"- /directory set <path>",
+		"- /help [new|session|model|agent|directory]",
 	}, "\n")
 }
 
@@ -741,19 +741,19 @@ func formatCurrentState(state ConversationState) string {
 	} else {
 		builder.WriteString(strings.TrimSpace(state.DefaultAgent))
 	}
-	builder.WriteString("\n- default workdir: ")
-	if strings.TrimSpace(state.DefaultWorkdir) == "" {
+	builder.WriteString("\n- default directory: ")
+	if strings.TrimSpace(state.DefaultDirectory) == "" {
 		builder.WriteString("(none)")
 	} else {
-		builder.WriteString(strings.TrimSpace(state.DefaultWorkdir))
+		builder.WriteString(strings.TrimSpace(state.DefaultDirectory))
 	}
 
 	return builder.String()
 }
 
-func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir string, result *agent.Message) *Message {
+func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory string, result *agent.Message) *Message {
 	sessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
-	modelInfo := firstNonEmpty(c.humanizeModel(ctx, result.Model, resolvedWorkdir), resolvedModelSpec)
+	modelInfo := firstNonEmpty(c.humanizeModel(ctx, result.Model, resolvedDirectory), resolvedModelSpec)
 	return &Message{
 		Content: strings.TrimSpace(result.Content),
 		Chat:    req.Chat,
@@ -762,12 +762,12 @@ func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resol
 			Title:     firstNonEmpty(strings.TrimSpace(result.Title), strings.TrimSpace(req.Agent.Title)),
 			Model:     modelInfo,
 			Agent:     resolvedAgent,
-			Workdir:   firstNonEmpty(strings.TrimSpace(result.Workdir), resolvedWorkdir),
+			Directory: firstNonEmpty(strings.TrimSpace(result.Directory), resolvedDirectory),
 		},
 	}
 }
 
-func (c *AgentBridge) saveConversationState(_ *Message, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedWorkdir string, result *agent.Message) error {
+func (c *AgentBridge) saveConversationState(_ *Message, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory string, result *agent.Message) error {
 	responseSessionID := firstNonEmpty(strings.TrimSpace(result.SessionID), resolvedSessionID)
 	if resolvedChatSessionID != "" {
 		if responseSessionID != "" {
@@ -779,8 +779,8 @@ func (c *AgentBridge) saveConversationState(_ *Message, resolvedChatSessionID, r
 		if resolvedAgent != "" {
 			c.conversationStore.SetDefaultAgent(resolvedChatSessionID, resolvedAgent)
 		}
-		if resolvedWorkdir != "" {
-			c.conversationStore.SetDefaultWorkdir(resolvedChatSessionID, resolvedWorkdir)
+		if resolvedDirectory != "" {
+			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, resolvedDirectory)
 		}
 		if !result.Model.IsZero() {
 			c.conversationStore.SetLastModel(resolvedChatSessionID, result.Model, result.Mode)

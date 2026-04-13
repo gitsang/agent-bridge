@@ -126,7 +126,7 @@ func (s *FileConversationStore) SetDefaultAgent(chatSessionID string, agent stri
 	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetDefaultWorkdir(chatSessionID string, workdir string) {
+func (s *FileConversationStore) SetDefaultDirectory(chatSessionID string, directory string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -138,7 +138,7 @@ func (s *FileConversationStore) SetDefaultWorkdir(chatSessionID string, workdir 
 	s.cleanupExpiredLocked(now)
 
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
-	state.DefaultWorkdir = strings.TrimSpace(workdir)
+	state.DefaultDirectory = strings.TrimSpace(directory)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 	s.persistLocked()

@@ -57,17 +57,17 @@ Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 等�
 
 ## Slash commands:
 
-- `/new [--model <provider/model|model>] [--agent <name>] [--work-dir <path>] [--title <title>]`
+- `/new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]`
 - `/session attach <agent-session-id>`
 - `/session detach`
 - `/session current`
-- `/session list [--work-dir <path>]`
+- `/session list [--directory <path>]`
 - `/model set <provider/model|model>`
 - `/model list`
 - `/agent set <name>`
 - `/agent list`
-- `/workdir set <path>`
-- `/help [new|session|model|agent|workdir]`
+- `/directory set <path>`
+- `/help [new|session|model|agent|directory]`
 
 ## Conversation store
 

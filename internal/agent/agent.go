@@ -25,14 +25,14 @@ type Session struct {
 }
 
 type CreateSessionRequest struct {
-	Title   string
-	Workdir string
+	Title     string
+	Directory string
 }
 
 type Message struct {
 	ID string
 
-	Workdir string
+	Directory string
 
 	SessionID string
 	Title     string
@@ -77,12 +77,12 @@ type AgentInfo struct {
 
 type Client interface {
 	// Model
-	ListModels(ctx context.Context, workdir string) ([]ModelInfo, error)
-	ResolveModel(ctx context.Context, spec, workdir string) (ModelRef, error)
-	ListAgents(ctx context.Context, workdir string) ([]AgentInfo, error)
+	ListModels(ctx context.Context, directory string) ([]ModelInfo, error)
+	ResolveModel(ctx context.Context, spec, directory string) (ModelRef, error)
+	ListAgents(ctx context.Context, directory string) ([]AgentInfo, error)
 
 	// Session
-	ListSessions(ctx context.Context, workdir string) ([]Session, error)
+	ListSessions(ctx context.Context, directory string) ([]Session, error)
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
 	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
 

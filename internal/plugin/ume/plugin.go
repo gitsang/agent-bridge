@@ -451,7 +451,7 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Me
 func formatReply(message *bridge.Message) string {
 	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
-	directory := strings.TrimSpace(message.Agent.Workdir)
+	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
 	model := strings.TrimSpace(message.Agent.Model)
 

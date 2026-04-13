@@ -17,7 +17,7 @@ type AgentContext struct {
 	Title     string `json:"title,omitempty"`
 	Model     string `json:"model,omitempty"`
 	Agent     string `json:"agent,omitempty"`
-	Workdir   string `json:"workdir,omitempty"`
+	Directory string `json:"directory,omitempty"`
 }
 
 type Error struct {

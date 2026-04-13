@@ -15,7 +15,7 @@ services:
       # storage
       - ./share:/root/.local/share/opencode/
       - ./cache:/root/.cache/opencode/
-      - ./workdir:/opencode
+      - ./workspace:/opencode
     environment:
       - HTTP_PROXY=http://ops.yl.c8g.top:7890
       - HTTPS_PROXY=http://ops.yl.c8g.top:7890

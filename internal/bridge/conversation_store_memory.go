@@ -116,7 +116,7 @@ func (s *MemoryConversationStore) SetDefaultAgent(chatSessionID string, agent st
 	s.conversations[resolvedChatSessionID] = state
 }
 
-func (s *MemoryConversationStore) SetDefaultWorkdir(chatSessionID string, workdir string) {
+func (s *MemoryConversationStore) SetDefaultDirectory(chatSessionID string, directory string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -127,7 +127,7 @@ func (s *MemoryConversationStore) SetDefaultWorkdir(chatSessionID string, workdi
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
-	state.DefaultWorkdir = strings.TrimSpace(workdir)
+	state.DefaultDirectory = strings.TrimSpace(directory)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state
 }

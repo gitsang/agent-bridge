@@ -81,10 +81,10 @@ func NewClient(baseURL string, options ...Option) *Client {
 	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout}
 }
 
-func (c *Client) ListSessions(ctx context.Context, workdir string) ([]agent.Session, error) {
+func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Session, error) {
 	params := ocsdk.SessionListParams{}
-	if strings.TrimSpace(workdir) != "" {
-		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	if strings.TrimSpace(directory) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(directory))
 	}
 
 	resp, err := c.client.Session.List(ctx, params)
@@ -102,10 +102,10 @@ func (c *Client) ListSessions(ctx context.Context, workdir string) ([]agent.Sess
 	return sessions, nil
 }
 
-func (c *Client) ListModels(ctx context.Context, workdir string) ([]agent.ModelInfo, error) {
+func (c *Client) ListModels(ctx context.Context, directory string) ([]agent.ModelInfo, error) {
 	params := ocsdk.AppProvidersParams{}
-	if strings.TrimSpace(workdir) != "" {
-		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	if strings.TrimSpace(directory) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(directory))
 	}
 
 	resp, err := c.client.App.Providers(ctx, params)
@@ -146,10 +146,10 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]agent.ModelI
 	return models, nil
 }
 
-func (c *Client) ListAgents(ctx context.Context, workdir string) ([]agent.AgentInfo, error) {
+func (c *Client) ListAgents(ctx context.Context, directory string) ([]agent.AgentInfo, error) {
 	params := ocsdk.AgentListParams{}
-	if strings.TrimSpace(workdir) != "" {
-		params.Directory = ocsdk.F(strings.TrimSpace(workdir))
+	if strings.TrimSpace(directory) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(directory))
 	}
 
 	resp, err := c.client.Agent.List(ctx, params)
@@ -279,8 +279,8 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 
 func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionRequest) (*agent.Session, error) {
 	params := ocsdk.SessionNewParams{}
-	if strings.TrimSpace(request.Workdir) != "" {
-		params.Directory = ocsdk.F(strings.TrimSpace(request.Workdir))
+	if strings.TrimSpace(request.Directory) != "" {
+		params.Directory = ocsdk.F(strings.TrimSpace(request.Directory))
 	}
 	if strings.TrimSpace(request.Title) != "" {
 		params.Title = ocsdk.F(strings.TrimSpace(request.Title))
@@ -315,13 +315,13 @@ func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.Prom
 	}
 
 	params := ocsdk.SessionPromptParams{Parts: ocsdk.F(parts)}
-	resolvedWorkdir := strings.TrimSpace(request.Workdir)
-	if resolvedWorkdir != "" {
-		params.Directory = ocsdk.F(resolvedWorkdir)
+	resolvedDirectory := strings.TrimSpace(request.Directory)
+	if resolvedDirectory != "" {
+		params.Directory = ocsdk.F(resolvedDirectory)
 	}
 
 	if !request.Model.IsZero() {
-		ref, err := c.ResolveModel(ctx, request.Model.String(), resolvedWorkdir)
+		ref, err := c.ResolveModel(ctx, request.Model.String(), resolvedDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -466,11 +466,11 @@ func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.
 
 	result.Title = strings.TrimSpace(session.Title)
 	if strings.TrimSpace(session.Directory) != "" {
-		result.Workdir = strings.TrimSpace(session.Directory)
+		result.Directory = strings.TrimSpace(session.Directory)
 	}
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, workdir string) (agent.ModelRef, error) {
+func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agent.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
 		return agent.ModelRef{}, fmt.Errorf("model is required")
@@ -486,7 +486,7 @@ func (c *Client) ResolveModel(ctx context.Context, spec, workdir string) (agent.
 		return agent.ModelRef{ProviderID: providerID, ModelID: modelID}, nil
 	}
 
-	models, err := c.ListModels(ctx, workdir)
+	models, err := c.ListModels(ctx, directory)
 	if err != nil {
 		return agent.ModelRef{}, err
 	}
