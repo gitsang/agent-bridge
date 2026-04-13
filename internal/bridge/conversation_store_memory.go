@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gitsang/agent-bridge/internal/agent"
 )
 
 type MemoryConversationStore struct {
@@ -130,7 +132,7 @@ func (s *MemoryConversationStore) SetDefaultWorkdir(chatSessionID string, workdi
 	s.conversations[resolvedChatSessionID] = state
 }
 
-func (s *MemoryConversationStore) SetLastModelInfo(chatSessionID string, providerID, modelID, mode string) {
+func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef, mode string) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
@@ -141,8 +143,7 @@ func (s *MemoryConversationStore) SetLastModelInfo(chatSessionID string, provide
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
 	state := s.ensureStateLocked(resolvedChatSessionID, now)
-	state.LastProviderID = strings.TrimSpace(providerID)
-	state.LastModelID = strings.TrimSpace(modelID)
+	state.LastModel = model
 	state.LastMode = strings.TrimSpace(mode)
 	state.LastSeenAt = now
 	s.conversations[resolvedChatSessionID] = state

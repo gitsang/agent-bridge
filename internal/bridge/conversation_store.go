@@ -2,6 +2,8 @@ package bridge
 
 import (
 	"time"
+
+	"github.com/gitsang/agent-bridge/internal/agent"
 )
 
 const (
@@ -13,11 +15,10 @@ type ConversationState struct {
 	ChatSessionID  string
 	AgentSessionID string
 	DefaultModel   string
+	LastModel      agent.ModelRef
+	LastMode       string
 	DefaultAgent   string
 	DefaultWorkdir string
-	LastProviderID string
-	LastModelID    string
-	LastMode       string
 	BoundAt        time.Time
 	LastSeenAt     time.Time
 }
@@ -26,9 +27,9 @@ type ConversationStore interface {
 	Get(chatSessionID string) (ConversationState, bool)
 	PutBinding(chatSessionID string, agentSessionID string)
 	SetDefaultModel(chatSessionID string, model string)
+	SetLastModel(chatSessionID string, model agent.ModelRef, mode string)
 	SetDefaultAgent(chatSessionID string, agent string)
 	SetDefaultWorkdir(chatSessionID string, workdir string)
-	SetLastModelInfo(chatSessionID string, providerID, modelID, mode string)
 	Delete(chatSessionID string)
 	Touch(chatSessionID string)
 	List() []ConversationState

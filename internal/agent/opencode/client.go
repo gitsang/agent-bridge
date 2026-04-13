@@ -119,6 +119,7 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]agent.ModelI
 	models := make([]agent.ModelInfo, 0)
 	for _, provider := range resp.Providers {
 		providerID := strings.TrimSpace(provider.ID)
+		providerName := strings.TrimSpace(provider.Name)
 		for modelID, model := range provider.Models {
 			resolvedModelID := strings.TrimSpace(model.ID)
 			if resolvedModelID == "" {
@@ -128,9 +129,9 @@ func (c *Client) ListModels(ctx context.Context, workdir string) ([]agent.ModelI
 				continue
 			}
 			models = append(models, agent.ModelInfo{
-				ProviderID: providerID,
-				ModelID:    resolvedModelID,
-				Name:       strings.TrimSpace(model.Name),
+				ModelRef:     agent.ModelRef{ProviderID: providerID, ModelID: resolvedModelID},
+				ProviderName: providerName,
+				ModelName:    strings.TrimSpace(model.Name),
 			})
 		}
 	}
@@ -228,11 +229,13 @@ func (c *Client) GetSessionMessages(ctx context.Context, sessionID string) ([]ag
 			slog.Any("parts", msg.Parts),
 		)
 		messages = append(messages, agent.Message{
-			ID:         strings.TrimSpace(msg.Info.ID),
-			ProviderID: strings.TrimSpace(msg.Info.ProviderID),
-			ModelID:    strings.TrimSpace(msg.Info.ModelID),
-			Mode:       strings.TrimSpace(msg.Info.Mode),
-			Role:       string(msg.Info.Role),
+			ID:   strings.TrimSpace(msg.Info.ID),
+			Model: agent.ModelRef{
+				ProviderID: strings.TrimSpace(msg.Info.ProviderID),
+				ModelID:    strings.TrimSpace(msg.Info.ModelID),
+			},
+			Mode: strings.TrimSpace(msg.Info.Mode),
+			Role: string(msg.Info.Role),
 		})
 	}
 
@@ -254,9 +257,11 @@ func (c *Client) GetSessionLatestAssistantMessage(ctx context.Context, sessionID
 			continue
 		}
 		msg := agent.Message{
-			ID:          strings.TrimSpace(raw[i].Info.ID),
-			ProviderID:  strings.TrimSpace(raw[i].Info.ProviderID),
-			ModelID:     strings.TrimSpace(raw[i].Info.ModelID),
+			ID: strings.TrimSpace(raw[i].Info.ID),
+			Model: agent.ModelRef{
+				ProviderID: strings.TrimSpace(raw[i].Info.ProviderID),
+				ModelID:    strings.TrimSpace(raw[i].Info.ModelID),
+			},
 			Mode:        strings.TrimSpace(raw[i].Info.Mode),
 			Role:        string(raw[i].Info.Role),
 			CompletedAt: assistant.Time.Completed,
@@ -315,15 +320,14 @@ func (c *Client) Prompt(ctx context.Context, request agent.Message) (*agent.Prom
 		params.Directory = ocsdk.F(resolvedWorkdir)
 	}
 
-	resolvedModel := strings.TrimSpace(request.Model)
-	if resolvedModel != "" {
-		providerID, modelID, err := c.resolveModel(ctx, resolvedModel, resolvedWorkdir)
+	if !request.Model.IsZero() {
+		ref, err := c.ResolveModel(ctx, request.Model.String(), resolvedWorkdir)
 		if err != nil {
 			return nil, err
 		}
 		params.Model = ocsdk.F(ocsdk.SessionPromptParamsModel{
-			ProviderID: ocsdk.F(providerID),
-			ModelID:    ocsdk.F(modelID),
+			ProviderID: ocsdk.F(ref.ProviderID),
+			ModelID:    ocsdk.F(ref.ModelID),
 		})
 	}
 
@@ -432,10 +436,12 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	}
 
 	result := &agent.Message{
-		Content:     extractReply(response.Parts),
-		SessionID:   resultSessionID,
-		ProviderID:  strings.TrimSpace(assistant.ProviderID),
-		ModelID:     strings.TrimSpace(assistant.ModelID),
+		Content:   extractReply(response.Parts),
+		SessionID: resultSessionID,
+		Model: agent.ModelRef{
+			ProviderID: strings.TrimSpace(assistant.ProviderID),
+			ModelID:    strings.TrimSpace(assistant.ModelID),
+		},
 		Mode:        strings.TrimSpace(assistant.Mode),
 		CompletedAt: completedAt,
 	}
@@ -464,10 +470,10 @@ func (c *Client) fillPromptResultSessionInfo(ctx context.Context, result *agent.
 	}
 }
 
-func (c *Client) resolveModel(ctx context.Context, model string, workdir string) (string, string, error) {
-	resolvedModel := strings.TrimSpace(model)
+func (c *Client) ResolveModel(ctx context.Context, spec, workdir string) (agent.ModelRef, error) {
+	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
-		return "", "", fmt.Errorf("model is required")
+		return agent.ModelRef{}, fmt.Errorf("model is required")
 	}
 
 	if strings.Contains(resolvedModel, "/") {
@@ -475,31 +481,31 @@ func (c *Client) resolveModel(ctx context.Context, model string, workdir string)
 		providerID := strings.TrimSpace(pair[0])
 		modelID := strings.TrimSpace(pair[1])
 		if providerID == "" || modelID == "" {
-			return "", "", fmt.Errorf("invalid model format: %s", resolvedModel)
+			return agent.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
 		}
-		return providerID, modelID, nil
+		return agent.ModelRef{ProviderID: providerID, ModelID: modelID}, nil
 	}
 
 	models, err := c.ListModels(ctx, workdir)
 	if err != nil {
-		return "", "", err
+		return agent.ModelRef{}, err
 	}
 
 	matches := make([]agent.ModelInfo, 0, 4)
 	for _, candidate := range models {
-		if strings.EqualFold(strings.TrimSpace(candidate.ModelID), resolvedModel) {
+		if strings.EqualFold(candidate.ModelID, resolvedModel) {
 			matches = append(matches, candidate)
 		}
 	}
 
 	if len(matches) == 0 {
-		return "", "", fmt.Errorf("model not found: %s", resolvedModel)
+		return agent.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 	}
 	if len(matches) > 1 {
-		return "", "", fmt.Errorf("ambiguous model %s, use provider/model", resolvedModel)
+		return agent.ModelRef{}, fmt.Errorf("ambiguous model %s, use provider/model", resolvedModel)
 	}
 
-	return strings.TrimSpace(matches[0].ProviderID), strings.TrimSpace(matches[0].ModelID), nil
+	return matches[0].ModelRef, nil
 }
 
 func toSession(s ocsdk.Session) agent.Session {

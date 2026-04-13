@@ -1,6 +1,22 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+type ModelRef struct {
+	ProviderID string
+	ModelID    string
+}
+
+func (m ModelRef) IsZero() bool {
+	return m.ProviderID == "" || m.ModelID == ""
+}
+
+func (m ModelRef) String() string {
+	return fmt.Sprintf("%s/%s", m.ProviderID, m.ModelID)
+}
 
 type Session struct {
 	ID        string
@@ -21,12 +37,10 @@ type Message struct {
 	SessionID string
 	Title     string
 
-	Role       string
-	Mode       string
-	Agent      string
-	Model      string
-	ProviderID string
-	ModelID    string
+	Role  string
+	Mode  string
+	Agent string
+	Model ModelRef
 
 	Content     string
 	CompletedAt float64
@@ -50,9 +64,9 @@ func (h *PromptHandle) Err() <-chan error {
 }
 
 type ModelInfo struct {
-	ProviderID string
-	ModelID    string
-	Name       string
+	ModelRef
+	ProviderName string
+	ModelName    string
 }
 
 type AgentInfo struct {
@@ -64,6 +78,7 @@ type AgentInfo struct {
 type Client interface {
 	// Model
 	ListModels(ctx context.Context, workdir string) ([]ModelInfo, error)
+	ResolveModel(ctx context.Context, spec, workdir string) (ModelRef, error)
 	ListAgents(ctx context.Context, workdir string) ([]AgentInfo, error)
 
 	// Session
