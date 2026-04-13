@@ -89,6 +89,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 		bridge.WithConversationStore(conversationStore),
 	)
 
+	// Run
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
