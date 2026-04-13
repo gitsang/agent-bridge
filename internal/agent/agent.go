@@ -30,15 +30,14 @@ type CreateSessionRequest struct {
 }
 
 type Message struct {
-	SessionID string
-
-	Role  string
-	Agent string
-	Model ModelRef
-
 	ID          string
+	SessionID   string
+	Role        string
 	Content     string
 	CompletedAt float64
+
+	Agent string
+	Model ModelRef
 }
 
 type PromptOptions struct {
