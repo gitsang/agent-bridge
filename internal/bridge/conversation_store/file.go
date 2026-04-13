@@ -1,4 +1,4 @@
-package bridge
+package conversation_store
 
 import (
 	"encoding/json"

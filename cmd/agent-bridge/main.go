@@ -12,6 +12,7 @@ import (
 
 	"github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
+	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 	"github.com/gitsang/agent-bridge/internal/plugin"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/openai_compatible"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/ume"
@@ -157,13 +158,13 @@ func Run(cmd *cobra.Command, _ []string) error {
 	return group.Wait()
 }
 
-func buildConversationStore(c Config) (bridge.ConversationStore, error) {
+func buildConversationStore(c Config) (conversation_store.ConversationStore, error) {
 	storeType := strings.ToLower(strings.TrimSpace(c.ConversationStore.Type))
 	switch storeType {
 	case "", "memory":
-		return bridge.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
+		return conversation_store.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
 	case "file":
-		return bridge.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
+		return conversation_store.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
 	default:
 		return nil, fmt.Errorf("unsupported conversation store type %q", c.ConversationStore.Type)
 	}

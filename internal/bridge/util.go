@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -17,7 +18,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func formatCurrentState(state ConversationState) string {
+func formatCurrentState(state conversation_store.ConversationState) string {
 	builder := strings.Builder{}
 	builder.WriteString("Conversation state:")
 	builder.WriteString("\n- chat session: ")

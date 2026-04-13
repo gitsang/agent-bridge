@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
-	"github.com/gitsang/logi"
 	"github.com/gitsang/agent-bridge/pkg/util/timex"
+	"github.com/gitsang/logi"
 	"github.com/natefinch/lumberjack"
 )
 

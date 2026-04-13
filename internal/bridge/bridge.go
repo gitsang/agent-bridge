@@ -4,12 +4,13 @@ import (
 	"log/slog"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 )
 
 type AgentBridge struct {
 	logger            *slog.Logger
 	agentClient       agent.Client
-	conversationStore ConversationStore
+	conversationStore conversation_store.ConversationStore
 	modelCache        *modelCache
 }
 
@@ -17,7 +18,7 @@ func defaultAgentBridge() *AgentBridge {
 	return &AgentBridge{
 		logger:            slog.Default(),
 		agentClient:       nil,
-		conversationStore: NewMemoryConversationStore(0, 0),
+		conversationStore: conversation_store.NewMemoryConversationStore(0, 0),
 		modelCache:        &modelCache{},
 	}
 }
@@ -36,7 +37,7 @@ func WithAgentClient(client agent.Client) OptionFunc {
 	}
 }
 
-func WithConversationStore(store ConversationStore) OptionFunc {
+func WithConversationStore(store conversation_store.ConversationStore) OptionFunc {
 	return func(target *AgentBridge) {
 		target.conversationStore = store
 	}

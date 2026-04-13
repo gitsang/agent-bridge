@@ -1,4 +1,4 @@
-package bridge
+package conversation_store
 
 import (
 	"time"
@@ -12,14 +12,14 @@ const (
 )
 
 type ConversationState struct {
-	ChatSessionID  string
-	AgentSessionID string
-	DefaultModel   string
-	LastModel      agent.ModelRef
-	DefaultAgent   string
+	ChatSessionID    string
+	AgentSessionID   string
+	DefaultModel     string
+	LastModel        agent.ModelRef
+	DefaultAgent     string
 	DefaultDirectory string
-	BoundAt        time.Time
-	LastSeenAt     time.Time
+	BoundAt          time.Time
+	LastSeenAt       time.Time
 }
 
 type ConversationStore interface {
