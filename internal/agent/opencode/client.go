@@ -503,52 +503,72 @@ func toSession(s ocsdk.Session) agent.Session {
 func extractReply(parts []ocsdk.Part) string {
 	builder := strings.Builder{}
 
-	appendText := func(prefix, text string) {
-		if text = strings.TrimSpace(text); text == "" {
-			return
-		}
-		if builder.Len() > 0 {
-			builder.WriteString("\n")
-		}
-		if prefix != "" {
-			builder.WriteString(prefix)
-			builder.WriteString(" ")
-		}
-		builder.WriteString(text)
-	}
-
 	for _, part := range parts {
 		switch part.Type {
 		case ocsdk.PartTypeText:
-			appendText("", part.Text)
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				break
+			}
+			builder.WriteString(text)
 		case ocsdk.PartTypeReasoning:
-			appendText("[reasoning]", part.Text)
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				break
+			}
+			fmt.Fprintf(&builder, "\n<thinking>\n%s\n</thinking>", text)
 		case ocsdk.PartTypeFile:
-			appendText("[file:", part.Filename+"]")
+			filename := strings.TrimSpace(part.Filename)
+			if filename == "" {
+				break
+			}
+			fmt.Fprintf(&builder, "\n<file name=%s />", filename)
 		case ocsdk.PartTypeTool:
 			state, ok := part.State.(ocsdk.ToolPartState)
 			if !ok {
-				appendText("[tool:", part.Tool+"]")
+				tool := strings.TrimSpace(part.Tool)
+				if tool == "" {
+					break
+				}
+				fmt.Fprintf(&builder, "\n<tool name=%s />", tool)
 				break
 			}
-			var inputStr string
+
 			if b, err := json.Marshal(state.Input); err == nil {
-				inputStr = string(b)
+				inputStr := string(b)
+				fmt.Fprintf(&builder, "\n<tool name=\"%s\" type=\"input\">\n%s\n</tool>", part.Tool, inputStr)
 			}
-			appendText(fmt.Sprintf("[tool: %s]", part.Tool), fmt.Sprintf("%s\n\n%s", inputStr, strings.TrimSpace(state.Output)))
+			outputStr := strings.TrimSpace(state.Output)
+			fmt.Fprintf(&builder, "\n<tool name=\"%s\" type=\"output\">\n%s\n</tool>", part.Tool, outputStr)
 		case ocsdk.PartTypeStepStart:
 		case ocsdk.PartTypeStepFinish:
 		case ocsdk.PartTypeSnapshot:
-			appendText("[snapshot]", part.Snapshot)
+			text := strings.TrimSpace(part.Snapshot)
+			if text == "" {
+				break
+			}
+			fmt.Fprintf(&builder, "\n<snapshot>%s</snapshot>", text)
 		case ocsdk.PartTypePatch:
 			if files, ok := part.Files.([]string); ok {
-				appendText("[patch]", strings.Join(files, ", "))
+				text := strings.TrimSpace(strings.Join(files, ", "))
+				if text == "" {
+					break
+				}
+				fmt.Fprintf(&builder, "\n<patch>%s</patch>", text)
 			}
 		case ocsdk.PartTypeAgent:
-			appendText("[agent:", part.Name+"]")
+			name := strings.TrimSpace(part.Name)
+			if name == "" {
+				break
+			}
+			fmt.Fprintf(&builder, "\n<agent name=\"%s\" />", name)
 		case ocsdk.PartTypeRetry:
 			if e, ok := part.Error.(ocsdk.PartRetryPartError); ok {
-				appendText("[retry]", e.Data.Message)
+				text := strings.TrimSpace(e.Data.Message)
+				if text == "" {
+					break
+				}
+				fmt.Fprintf(&builder, "\n<retry>%s</retry>", text)
 			}
 		}
 	}
