@@ -229,7 +229,7 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Mes
 			slog.Any("parts", msg.Parts),
 		)
 		messages = append(messages, agent.Message{
-			ID:   strings.TrimSpace(msg.Info.ID),
+			ID: strings.TrimSpace(msg.Info.ID),
 			Model: agent.ModelRef{
 				ProviderID: strings.TrimSpace(msg.Info.ProviderID),
 				ModelID:    strings.TrimSpace(msg.Info.ModelID),

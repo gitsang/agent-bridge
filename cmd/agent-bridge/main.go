@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/gitsang/agent-bridge/internal/agent"
 	"github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
@@ -74,19 +75,17 @@ func Run(cmd *cobra.Command, _ []string) error {
 	)
 
 	// Dependency Injection
-	opencodeClient := opencode.NewClient(
-		c.Agent.BaseURL,
-		opencode.WithLogger(logger),
-		opencode.WithAuthentication(c.Agent.Username, c.Agent.Password),
-		opencode.WithTimeout(c.Agent.Timeout),
-	)
+	agentClient, err := buildAgentClient(c, logger)
+	if err != nil {
+		return err
+	}
 	conversationStore, err := buildConversationStore(c)
 	if err != nil {
 		return err
 	}
 	connector := bridge.New(
 		bridge.WithLogger(logger),
-		bridge.WithAgentClient(opencodeClient),
+		bridge.WithAgentClient(agentClient),
 		bridge.WithConversationStore(conversationStore),
 	)
 
@@ -167,6 +166,21 @@ func buildConversationStore(c Config) (conversation_store.ConversationStore, err
 		return conversation_store.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
 	default:
 		return nil, fmt.Errorf("unsupported conversation store type %q", c.ConversationStore.Type)
+	}
+}
+
+	func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
+		driver := strings.ToLower(strings.TrimSpace(c.Agent.Driver))
+		switch driver {
+		case "", "opencode":
+			return opencode.NewClient(
+				c.Agent.Opencode.BaseURL,
+				opencode.WithLogger(logger),
+			opencode.WithAuthentication(c.Agent.Opencode.Username, c.Agent.Opencode.Password),
+			opencode.WithTimeout(c.Agent.Opencode.Timeout),
+		), nil
+	default:
+		return nil, fmt.Errorf("unsupported agent driver %q", c.Agent.Driver)
 	}
 }
 

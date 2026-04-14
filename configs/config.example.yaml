@@ -19,10 +19,12 @@ plugins:
       listen: ":24369"
 
 agent:
-  baseurl: "http://127.0.0.1:4096"
-  username: ""
-  password: ""
-  timeout: 0s
+  driver: opencode
+  opencode:
+    base_url: "http://127.0.0.1:4096"
+    username: ""
+    password: ""
+    timeout: 0s
 
 conversation_store:
   type: "memory" # memory | file
