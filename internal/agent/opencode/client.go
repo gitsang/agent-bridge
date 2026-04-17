@@ -510,7 +510,7 @@ func extractReply(parts []ocsdk.Part) string {
 			if text == "" {
 				break
 			}
-			builder.WriteString(text)
+			builder.WriteString("\n" + text)
 		case ocsdk.PartTypeReasoning:
 			text := strings.TrimSpace(part.Text)
 			if text == "" {
