@@ -24,6 +24,11 @@ import (
 const defaultSendURL = "https://uc.yealink.com:443/linker/robot/send"
 
 const (
+	replyFormatText = "text"
+	replyFormatCard = "card"
+)
+
+const (
 	messageIDRetention  = 24 * time.Hour
 	maxRecentMessageIDs = 32
 	maxSessionStates    = 1024
@@ -35,6 +40,7 @@ var atTagPattern = regexp.MustCompile(`(?s)<at\b[^>]*>.*?</at>\s*`)
 type Config struct {
 	Listen  string `yaml:"listen"`
 	SendURL string `yaml:"send_url"`
+	Format  string `yaml:"format"`
 }
 
 type Plugin struct {
@@ -62,6 +68,11 @@ func init() {
 		if err := yaml.Unmarshal(configBytes, &cfg); err != nil {
 			return nil, err
 		}
+		replyFormat, err := normalizeReplyFormat(cfg.Format)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Format = replyFormat
 
 		if infra.Logger == nil {
 			return nil, fmt.Errorf("ume infrastructure logger is required")
@@ -80,15 +91,20 @@ func defaultConfig() Config {
 	return Config{
 		Listen:  ":8193",
 		SendURL: defaultSendURL,
+		Format:  replyFormatText,
 	}
 }
 
 func New(name string, logger *slog.Logger, cfg Config) *Plugin {
+	defaultCfg := defaultConfig()
 	if strings.TrimSpace(cfg.Listen) == "" {
-		cfg.Listen = defaultConfig().Listen
+		cfg.Listen = defaultCfg.Listen
 	}
 	if strings.TrimSpace(cfg.SendURL) == "" {
-		cfg.SendURL = defaultConfig().SendURL
+		cfg.SendURL = defaultCfg.SendURL
+	}
+	if replyFormat, err := normalizeReplyFormat(cfg.Format); err == nil {
+		cfg.Format = replyFormat
 	}
 
 	return &Plugin{
@@ -377,13 +393,12 @@ func (p *Plugin) limitSessionStatesLocked(now time.Time) {
 }
 
 func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Message) error {
-	if message == nil {
-		return fmt.Errorf("reply message is required")
+	payload, err := p.buildSendRequest(message)
+	if err != nil {
+		return err
 	}
-
-	content := formatReply(message)
-	if strings.TrimSpace(content) == "" {
-		return fmt.Errorf("reply content is required")
+	if strings.TrimSpace(payload.Body) == "" {
+		return fmt.Errorf("reply body is required")
 	}
 
 	endpoint, err := url.Parse(p.cfg.SendURL)
@@ -402,7 +417,8 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Me
 		"send_scheme", endpoint.Scheme,
 		"send_host", endpoint.Host,
 		"send_path", endpoint.Path,
-		"content_length", len(content),
+		"msg_type", payload.MsgType,
+		"body_length", len(payload.Body),
 		"access_token_present", strings.TrimSpace(token) != "",
 	)
 	defer func() {
@@ -413,10 +429,6 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Me
 		)
 	}()
 
-	payload := UmeSendRequest{
-		MsgType: "text",
-		Body:    content,
-	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		sendErr = fmt.Errorf("marshal ume reply: %w", err)
@@ -450,6 +462,36 @@ func (p *Plugin) sendReply(ctx context.Context, token string, message *bridge.Me
 	return nil
 }
 
+func (p *Plugin) buildSendRequest(message *bridge.Message) (UmeSendRequest, error) {
+	if message == nil {
+		return UmeSendRequest{}, fmt.Errorf("reply message is required")
+	}
+
+	replyFormat, err := normalizeReplyFormat(p.cfg.Format)
+	if err != nil {
+		return UmeSendRequest{}, err
+	}
+
+	switch replyFormat {
+	case replyFormatText:
+		return UmeSendRequest{
+			MsgType: replyFormatText,
+			Body:    formatReply(message),
+		}, nil
+	case replyFormatCard:
+		body, err := formatCardReply(message)
+		if err != nil {
+			return UmeSendRequest{}, err
+		}
+		return UmeSendRequest{
+			MsgType: replyFormatCard,
+			Body:    body,
+		}, nil
+	default:
+		return UmeSendRequest{}, fmt.Errorf("unsupported ume format %q", p.cfg.Format)
+	}
+}
+
 func formatReply(message *bridge.Message) string {
 	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
@@ -468,6 +510,66 @@ func formatReply(message *bridge.Message) string {
 	builder.WriteString(model)
 
 	return builder.String()
+}
+
+func formatCardReply(message *bridge.Message) (string, error) {
+	title := strings.TrimSpace(message.Agent.Title)
+	content := strings.TrimSpace(message.Content)
+	directory := strings.TrimSpace(message.Agent.Directory)
+	sessionID := strings.TrimSpace(message.Agent.SessionID)
+	model := strings.TrimSpace(message.Agent.Model)
+
+	card := umeCardBody{
+		Header: umeCardHeader{
+			Title: umeCardText{
+				Tag:     "plainText",
+				Content: title,
+			},
+			Theme: "main",
+		},
+		Elements: []umeCardElement{
+			{
+				Tag:     "markdown",
+				Content: content,
+			},
+			{
+				Tag: "hr",
+			},
+			{
+				Tag:     "markdown",
+				Content: fmt.Sprintf("- *Directory: %s*\n- *Model: %s*\n- *Session: %s*", directory, model, sessionID),
+			},
+		},
+		Link: umeCardLink{
+			Tag: "url",
+			URL: formatCardLink(directory, model, sessionID),
+		},
+	}
+
+	bodyBytes, err := json.Marshal(card)
+	if err != nil {
+		return "", fmt.Errorf("marshal ume card body: %w", err)
+	}
+	return string(bodyBytes), nil
+}
+
+func formatCardLink(directory, model, sessionID string) string {
+	values := url.Values{}
+	values.Set("directory", directory)
+	values.Set("model", model)
+	values.Set("sessionId", sessionID)
+	return "http://localhost?" + values.Encode()
+}
+
+func normalizeReplyFormat(format string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", replyFormatText:
+		return replyFormatText, nil
+	case replyFormatCard:
+		return replyFormatCard, nil
+	default:
+		return "", fmt.Errorf("unsupported ume format %q", format)
+	}
 }
 
 func sanitizeMessage(message string) string {
@@ -511,6 +613,32 @@ type UmeWebhookRequest struct {
 type UmeSendRequest struct {
 	MsgType string `json:"msgType"`
 	Body    string `json:"body"`
+}
+
+type umeCardBody struct {
+	Header   umeCardHeader    `json:"header"`
+	Elements []umeCardElement `json:"elements"`
+	Link     umeCardLink      `json:"link"`
+}
+
+type umeCardHeader struct {
+	Title umeCardText `json:"title"`
+	Theme string      `json:"theme"`
+}
+
+type umeCardText struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
+type umeCardElement struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content,omitempty"`
+}
+
+type umeCardLink struct {
+	Tag string `json:"tag"`
+	URL string `json:"url"`
 }
 
 type flexibleString string

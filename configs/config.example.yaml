@@ -17,6 +17,7 @@ plugins:
   ume:
     ume:
       listen: ":24369"
+      format: "text" # text | card
 
 agent:
   driver: opencode
