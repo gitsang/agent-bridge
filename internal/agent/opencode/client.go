@@ -356,7 +356,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	return agent.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*agent.Message, error) {
+func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output agent.MessageOutputOptions) ([]*agent.Message, error) {
 	var results []*agent.Message
 	var retErr error
 	logger := c.logger.With(
@@ -412,10 +412,13 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 		logger.With("message_id", candidate.ID).Debug("poll messages after: raw message response",
 			"response", resp,
 		)
-		result, err := c.buildPromptResult(ctx, sessionID, candidate.Time.Completed, resp)
+		result, err := c.buildPromptResult(ctx, sessionID, candidate.Time.Completed, resp, output)
 		if err != nil {
 			retErr = err
 			return nil, retErr
+		}
+		if result.Content == "" {
+			continue
 		}
 		results = append(results, result)
 	}
@@ -423,7 +426,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
-func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse) (*agent.Message, error) {
+func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output agent.MessageOutputOptions) (*agent.Message, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
 	}
@@ -442,7 +445,7 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	}
 
 	result := &agent.Message{
-		Content:   extractReply(response.Parts),
+		Content:   extractReply(response.Parts, output),
 		SessionID: resultSessionID,
 		Model: agent.ModelRef{
 			ProviderID: strings.TrimSpace(assistant.ProviderID),
@@ -500,30 +503,42 @@ func toSession(s ocsdk.Session) agent.Session {
 	}
 }
 
-func extractReply(parts []ocsdk.Part) string {
+func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string {
 	builder := strings.Builder{}
 
 	for _, part := range parts {
 		switch part.Type {
 		case ocsdk.PartTypeText:
+			if !output.Includes(agent.MessageContentAnswer) {
+				break
+			}
 			text := strings.TrimSpace(part.Text)
 			if text == "" {
 				break
 			}
 			builder.WriteString("\n" + text)
 		case ocsdk.PartTypeReasoning:
+			if !output.Includes(agent.MessageContentReasoning) {
+				break
+			}
 			text := strings.TrimSpace(part.Text)
 			if text == "" {
 				break
 			}
 			fmt.Fprintf(&builder, "\n<thinking>\n%s\n</thinking>", text)
 		case ocsdk.PartTypeFile:
+			if !output.Includes(agent.MessageContentArtifactFile) {
+				break
+			}
 			filename := strings.TrimSpace(part.Filename)
 			if filename == "" {
 				break
 			}
 			fmt.Fprintf(&builder, "\n<file name=%s />", filename)
 		case ocsdk.PartTypeTool:
+			if !output.Includes(agent.MessageContentActionTool) {
+				break
+			}
 			state, ok := part.State.(ocsdk.ToolPartState)
 			if !ok {
 				tool := strings.TrimSpace(part.Tool)
@@ -543,12 +558,18 @@ func extractReply(parts []ocsdk.Part) string {
 		case ocsdk.PartTypeStepStart:
 		case ocsdk.PartTypeStepFinish:
 		case ocsdk.PartTypeSnapshot:
+			if !output.Includes(agent.MessageContentArtifactState) {
+				break
+			}
 			text := strings.TrimSpace(part.Snapshot)
 			if text == "" {
 				break
 			}
 			fmt.Fprintf(&builder, "\n<snapshot>%s</snapshot>", text)
 		case ocsdk.PartTypePatch:
+			if !output.Includes(agent.MessageContentArtifactPatch) {
+				break
+			}
 			if files, ok := part.Files.([]string); ok {
 				text := strings.TrimSpace(strings.Join(files, ", "))
 				if text == "" {
@@ -557,12 +578,18 @@ func extractReply(parts []ocsdk.Part) string {
 				fmt.Fprintf(&builder, "\n<patch>%s</patch>", text)
 			}
 		case ocsdk.PartTypeAgent:
+			if !output.Includes(agent.MessageContentActionAgent) {
+				break
+			}
 			name := strings.TrimSpace(part.Name)
 			if name == "" {
 				break
 			}
 			fmt.Fprintf(&builder, "\n<agent name=\"%s\" />", name)
 		case ocsdk.PartTypeRetry:
+			if !output.Includes(agent.MessageContentDiagnostic) {
+				break
+			}
 			if e, ok := part.Error.(ocsdk.PartRetryPartError); ok {
 				text := strings.TrimSpace(e.Data.Message)
 				if text == "" {

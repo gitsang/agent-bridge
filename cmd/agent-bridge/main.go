@@ -86,6 +86,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	connector := bridge.New(
 		bridge.WithLogger(logger),
 		bridge.WithAgentClient(agentClient),
+		bridge.WithMessageOutputOptions(c.Agent.MessageOutput),
 		bridge.WithConversationStore(conversationStore),
 	)
 
@@ -169,13 +170,13 @@ func buildConversationStore(c Config) (conversation_store.ConversationStore, err
 	}
 }
 
-	func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
-		driver := strings.ToLower(strings.TrimSpace(c.Agent.Driver))
-		switch driver {
-		case "", "opencode":
-			return opencode.NewClient(
-				c.Agent.Opencode.BaseURL,
-				opencode.WithLogger(logger),
+func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
+	driver := strings.ToLower(strings.TrimSpace(c.Agent.Driver))
+	switch driver {
+	case "", "opencode":
+		return opencode.NewClient(
+			c.Agent.Opencode.BaseURL,
+			opencode.WithLogger(logger),
 			opencode.WithAuthentication(c.Agent.Opencode.Username, c.Agent.Opencode.Password),
 			opencode.WithTimeout(c.Agent.Opencode.Timeout),
 		), nil

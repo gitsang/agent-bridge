@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Model
@@ -58,6 +59,46 @@ type Message struct {
 
 	Agent string
 	Model ModelRef
+}
+
+type MessageContentKind string
+
+const (
+	MessageContentAnswer        MessageContentKind = "answer"
+	MessageContentReasoning     MessageContentKind = "reasoning"
+	MessageContentAction        MessageContentKind = "action"
+	MessageContentActionTool    MessageContentKind = "action.tool"
+	MessageContentActionAgent   MessageContentKind = "action.agent"
+	MessageContentArtifact      MessageContentKind = "artifact"
+	MessageContentArtifactFile  MessageContentKind = "artifact.file"
+	MessageContentArtifactPatch MessageContentKind = "artifact.patch"
+	MessageContentArtifactState MessageContentKind = "artifact.state"
+	MessageContentDiagnostic    MessageContentKind = "diagnostic"
+)
+
+type MessageOutputOptions struct {
+	Include []MessageContentKind `json:"include" yaml:"include" mapstructure:"include"`
+}
+
+func (o MessageOutputOptions) Includes(kind MessageContentKind) bool {
+	resolvedKind := strings.TrimSpace(string(kind))
+	if resolvedKind == "" {
+		return false
+	}
+	if len(o.Include) == 0 {
+		return true
+	}
+
+	for _, candidate := range o.Include {
+		resolvedCandidate := strings.TrimSpace(string(candidate))
+		if resolvedCandidate == "" {
+			continue
+		}
+		if resolvedKind == resolvedCandidate || strings.HasPrefix(resolvedKind, resolvedCandidate+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // Prompt
@@ -122,5 +163,5 @@ type Client interface {
 	GetMessages(ctx context.Context, sessionID string) ([]Message, error)
 	GetLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
 	Prompt(ctx context.Context, sessionID string, prompt string, optfs ...PromptOptionFunc) (*PromptHandle, error)
-	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64) ([]*Message, error)
+	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output MessageOutputOptions) ([]*Message, error)
 }

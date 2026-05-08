@@ -21,6 +21,13 @@ plugins:
 
 agent:
   driver: opencode
+  message_output:
+    include:
+      - answer
+      - reasoning
+      - action
+      - artifact
+      - diagnostic
   opencode:
     base_url: "http://127.0.0.1:4096"
     username: ""

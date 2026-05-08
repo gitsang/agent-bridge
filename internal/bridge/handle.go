@@ -261,7 +261,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		case err := <-handle.Err():
 			return NewError(http.StatusBadGateway, err.Error())
 		case <-handle.Done():
-			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt)
+			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}
@@ -277,7 +277,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, lastResult)
 		case <-ticker.C:
-			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt)
+			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}

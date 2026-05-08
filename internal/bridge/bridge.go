@@ -9,18 +9,20 @@ import (
 )
 
 type AgentBridge struct {
-	logger            *slog.Logger
-	agentClient       agent.Client
-	conversationStore conversation_store.ConversationStore
-	modelCache        *model_cache.Cache
+	logger               *slog.Logger
+	agentClient          agent.Client
+	messageOutputOptions agent.MessageOutputOptions
+	conversationStore    conversation_store.ConversationStore
+	modelCache           *model_cache.Cache
 }
 
 func defaultAgentBridge() *AgentBridge {
 	return &AgentBridge{
-		logger:            slog.Default(),
-		agentClient:       nil,
-		conversationStore: conversation_store.NewMemoryConversationStore(0, 0),
-		modelCache:        model_cache.New(),
+		logger:               slog.Default(),
+		agentClient:          nil,
+		messageOutputOptions: agent.MessageOutputOptions{},
+		conversationStore:    conversation_store.NewMemoryConversationStore(0, 0),
+		modelCache:           model_cache.New(),
 	}
 }
 
@@ -35,6 +37,12 @@ func WithLogger(logger *slog.Logger) OptionFunc {
 func WithAgentClient(client agent.Client) OptionFunc {
 	return func(target *AgentBridge) {
 		target.agentClient = client
+	}
+}
+
+func WithMessageOutputOptions(options agent.MessageOutputOptions) OptionFunc {
+	return func(target *AgentBridge) {
+		target.messageOutputOptions = options
 	}
 }
 

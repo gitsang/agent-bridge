@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"github.com/gitsang/agent-bridge/internal/agent"
+)
 
 type Config struct {
 	Log struct {
@@ -11,8 +15,9 @@ type Config struct {
 	} `json:"log" yaml:"log"`
 	Plugins map[string]any `json:"plugins" yaml:"plugins"`
 	Agent   struct {
-		Driver   string `default:"opencode" usage:"agent driver" json:"driver" yaml:"driver"`
-		Opencode struct {
+		Driver        string                     `default:"opencode" usage:"agent driver" json:"driver" yaml:"driver" mapstructure:"driver"`
+		MessageOutput agent.MessageOutputOptions `default:"{}" usage:"agent message output options" json:"message_output" yaml:"message_output" mapstructure:"message_output"`
+		Opencode      struct {
 			BaseURL  string        `default:"http://127.0.0.1:4096" usage:"opencode agent server base URL" json:"base_url" yaml:"base_url"`
 			Username string        `default:"agent" usage:"opencode agent server username" json:"username" yaml:"username"`
 			Password string        `usage:"opencode agent server password" json:"password" yaml:"password"`

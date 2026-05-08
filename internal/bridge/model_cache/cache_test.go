@@ -124,6 +124,6 @@ func (c *fakeClient) Prompt(context.Context, string, string, ...agent.PromptOpti
 	return nil, nil
 }
 
-func (c *fakeClient) PollMessagesAfter(context.Context, string, float64) ([]*agent.Message, error) {
+func (c *fakeClient) PollMessagesAfter(context.Context, string, float64, agent.MessageOutputOptions) ([]*agent.Message, error) {
 	return nil, nil
 }
