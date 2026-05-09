@@ -116,13 +116,18 @@ vet:
 .PHONY: test
 ## run unit tests
 test:
-	CGO_ENABLED=1 $(GO) test -race ./...
+	CGO_ENABLED=0 $(GO) test -race ./...
 
 
 .PHONY: run
 ## run via go run
 run:
-	$(GO) run $(GO_CMD_PATH) $(filter-out $@,$(MAKECMDGOALS))
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) \
+		$(GO) run \
+		-trimpath \
+		-ldflags "$(LD_FLAGS)" \
+		$(GO_CMD_PATH) \
+		$(filter-out $@,$(MAKECMDGOALS))
 
 
 .PHONY: run-container
