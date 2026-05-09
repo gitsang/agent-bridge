@@ -68,7 +68,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	}
 
 	logger := slog.New(logHandlers.Get(c.Log.Handlers.Default))
-	logger.Debug("Preparing...",
+	logger.Debug("Preparing...", versionLog,
 		slog.Any("flags", rootFlags),
 		slog.Any("config", c),
 		slog.String("pid", fmt.Sprintf("%d", os.Getpid())),

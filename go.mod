@@ -7,6 +7,7 @@ require (
 	github.com/gitsang/configer v0.0.3-0.20260410022429-2d702b75d473
 	github.com/gitsang/logi v0.0.2
 	github.com/natefinch/lumberjack v2.0.0+incompatible
+	github.com/rodaine/table v1.3.1
 	github.com/spf13/cobra v1.10.2
 	github.com/sst/opencode-sdk-go v0.19.2
 	golang.org/x/sync v0.20.0
@@ -17,7 +18,6 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gitsang/defaults v1.8.2 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
