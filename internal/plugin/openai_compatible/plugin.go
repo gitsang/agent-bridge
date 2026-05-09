@@ -159,6 +159,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 
 	return mux
 }
+
 type openAIChatCompletionRequest struct {
 	Model    string                 `json:"model"`
 	Messages []openAIRequestMessage `json:"messages"`

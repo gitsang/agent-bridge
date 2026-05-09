@@ -143,3 +143,5 @@ configs/config.yaml
 
 # dist files
 .dist
+dist
+.builds

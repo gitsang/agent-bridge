@@ -1,4 +1,5 @@
 .git
 .gitignore
+.builds
 node_modules
 configs/config.yaml

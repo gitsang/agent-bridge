@@ -1,8 +1,10 @@
 FROM alpine:latest
 
+ARG DIST_PATH=dist/agent-bridge/linux/amd64/bin/agent-bridge
+
 WORKDIR /app
 
-COPY ./.dist/agent-bridge /usr/local/bin/agent-bridge
+COPY ./${DIST_PATH} /usr/local/bin/agent-bridge
 COPY ./configs/config.example.yaml /app/configs/config.yaml
 
 ENTRYPOINT ["/usr/local/bin/agent-bridge"]
