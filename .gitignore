@@ -19,6 +19,7 @@ dist
 .builds
 
 # Agents
+.worktrees
 .claude
 .codex
 .sisyphus
