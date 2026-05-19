@@ -127,3 +127,23 @@ func (c *fakeClient) Prompt(context.Context, string, string, ...agent.PromptOpti
 func (c *fakeClient) PollMessagesAfter(context.Context, string, float64, agent.MessageOutputOptions) ([]*agent.Message, error) {
 	return nil, nil
 }
+
+func (c *fakeClient) ListPendingPermissions(context.Context, string) ([]agent.PermissionRequest, error) {
+	return nil, nil
+}
+
+func (c *fakeClient) ReplyPermission(context.Context, string, string, agent.PermissionReply) error {
+	return nil
+}
+
+func (c *fakeClient) ListPendingQuestions(context.Context, string) ([]agent.QuestionRequest, error) {
+	return nil, nil
+}
+
+func (c *fakeClient) ReplyQuestion(context.Context, string, string, [][]string) error {
+	return nil
+}
+
+func (c *fakeClient) RejectQuestion(context.Context, string, string) error {
+	return nil
+}

@@ -2,10 +2,12 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -250,6 +252,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	defer ticker.Stop()
 
 	var lastResult *agent.Message
+	deliveredInteractions := map[string]struct{}{}
 
 	for {
 		select {
@@ -261,6 +264,9 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		case err := <-handle.Err():
 			return NewError(http.StatusBadGateway, err.Error())
 		case <-handle.Done():
+			if err := c.forwardPendingInteractions(ctx, req, resolvedSessionID, deliveredInteractions, reply); err != nil {
+				return err
+			}
 			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
@@ -278,6 +284,9 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			return c.saveConversationState(req, resolvedChatSessionID, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, lastResult)
 		case <-ticker.C:
+			if err := c.forwardPendingInteractions(ctx, req, resolvedSessionID, deliveredInteractions, reply); err != nil {
+				return err
+			}
 			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
@@ -299,6 +308,40 @@ func advanceCompletedCursor(current float64, msg *agent.Message) float64 {
 		return current
 	}
 	return msg.CompletedAt
+}
+
+func (c *AgentBridge) forwardPendingInteractions(ctx context.Context, req *Message, sessionID string, delivered map[string]struct{}, reply ReplyFunc) error {
+	permissions, err := c.agentClient.ListPendingPermissions(ctx, sessionID)
+	if err != nil {
+		return NewError(http.StatusBadGateway, err.Error())
+	}
+	for index, request := range permissions {
+		key := "permission:" + strings.TrimSpace(request.ID)
+		if _, ok := delivered[key]; ok {
+			continue
+		}
+		delivered[key] = struct{}{}
+		if err := reply(&Message{Content: formatPermissionRequest(index+1, request), Chat: req.Chat, Agent: AgentContext{SessionID: sessionID}}); err != nil {
+			return err
+		}
+	}
+
+	questions, err := c.agentClient.ListPendingQuestions(ctx, sessionID)
+	if err != nil {
+		return NewError(http.StatusBadGateway, err.Error())
+	}
+	for index, request := range questions {
+		key := "question:" + strings.TrimSpace(request.ID)
+		if _, ok := delivered[key]; ok {
+			continue
+		}
+		delivered[key] = struct{}{}
+		if err := reply(&Message{Content: formatQuestionRequest(index+1, request), Chat: req.Chat, Agent: AgentContext{SessionID: sessionID}}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
@@ -323,6 +366,10 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 		return c.handleAgentCommand(ctx, req, invocation)
 	case "directory":
 		return c.handleDirectoryCommand(req, invocation)
+	case "permission":
+		return c.handlePermissionCommand(ctx, req, invocation)
+	case "question":
+		return c.handleQuestionCommand(ctx, req, invocation)
 	case "help":
 		return &Message{Content: c.helpText(invocation), Chat: req.Chat}, nil
 	default:
@@ -608,6 +655,349 @@ func (c *AgentBridge) handleDirectoryCommand(req *Message, invocation *Invocatio
 	return &Message{Content: fmt.Sprintf("Default directory set to %s", directory), Chat: req.Chat, Agent: AgentContext{Directory: directory}}, nil
 }
 
+func (c *AgentBridge) handlePermissionCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
+	if len(invocation.Positionals) < 2 {
+		return nil, NewError(http.StatusBadRequest, "usage: /permission <once|always|reject> [id|index]")
+	}
+
+	reply := agent.PermissionReply(strings.ToLower(strings.TrimSpace(invocation.Positionals[1])))
+	if reply != agent.PermissionReplyOnce && reply != agent.PermissionReplyAlways && reply != agent.PermissionReplyReject {
+		return nil, NewError(http.StatusBadRequest, "permission reply must be once, always, or reject")
+	}
+
+	sessionID, err := c.resolveInteractionSessionID(req)
+	if err != nil {
+		return nil, err
+	}
+
+	requests, err := c.agentClient.ListPendingPermissions(ctx, sessionID)
+	if err != nil {
+		return nil, NewError(http.StatusBadGateway, err.Error())
+	}
+
+	targetToken := ""
+	if len(invocation.Positionals) > 2 {
+		targetToken = strings.TrimSpace(invocation.Positionals[2])
+	}
+	target, message, err := selectPermissionRequest(requests, targetToken)
+	if err != nil {
+		return &Message{Content: message, Chat: req.Chat}, nil
+	}
+
+	if err := c.agentClient.ReplyPermission(ctx, sessionID, target.ID, reply); err != nil {
+		if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+			return &Message{Content: fmt.Sprintf("Permission request no longer pending: %s", target.ID), Chat: req.Chat}, nil
+		}
+		return nil, NewError(http.StatusBadGateway, err.Error())
+	}
+
+	c.logger.Info("permission request replied",
+		"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
+		"agent_session_id", sessionID,
+		"request_id", target.ID,
+		"reply", string(reply),
+	)
+	return &Message{Content: fmt.Sprintf("Permission request %s replied with %s", target.ID, reply), Chat: req.Chat}, nil
+}
+
+func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
+	if len(invocation.Positionals) < 2 {
+		return nil, NewError(http.StatusBadRequest, "usage: /question [id|index] <answer...> or /question reject [id|index]")
+	}
+
+	sessionID, err := c.resolveInteractionSessionID(req)
+	if err != nil {
+		return nil, err
+	}
+
+	requests, err := c.agentClient.ListPendingQuestions(ctx, sessionID)
+	if err != nil {
+		return nil, NewError(http.StatusBadGateway, err.Error())
+	}
+
+	tokens := invocation.Positionals[1:]
+	if strings.EqualFold(strings.TrimSpace(tokens[0]), "reject") {
+		targetToken := ""
+		if len(tokens) > 1 {
+			targetToken = strings.TrimSpace(tokens[1])
+		}
+		target, message, err := selectQuestionRequest(requests, targetToken)
+		if err != nil {
+			return &Message{Content: message, Chat: req.Chat}, nil
+		}
+		if err := c.agentClient.RejectQuestion(ctx, sessionID, target.ID); err != nil {
+			if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+				return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
+			}
+			return nil, NewError(http.StatusBadGateway, err.Error())
+		}
+		c.logger.Info("question request rejected",
+			"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
+			"agent_session_id", sessionID,
+			"request_id", target.ID,
+		)
+		return &Message{Content: fmt.Sprintf("Question request %s rejected", target.ID), Chat: req.Chat}, nil
+	}
+
+	targetToken := ""
+	answerTokens := tokens
+	if len(requests) == 0 {
+		return &Message{Content: "No pending question requests", Chat: req.Chat}, nil
+	}
+	if questionRequestIDMatches(requests, tokens[0]) {
+		targetToken = strings.TrimSpace(tokens[0])
+		answerTokens = tokens[1:]
+	} else if len(requests) != 1 {
+		if !matchesQuestionTarget(requests, tokens[0]) {
+			return &Message{Content: formatPendingQuestions("Multiple pending question requests; include an id or index:", requests), Chat: req.Chat}, nil
+		}
+		targetToken = strings.TrimSpace(tokens[0])
+		answerTokens = tokens[1:]
+	}
+
+	target, message, err := selectQuestionRequest(requests, targetToken)
+	if err != nil {
+		return &Message{Content: message, Chat: req.Chat}, nil
+	}
+	answers, err := buildQuestionAnswers(target, answerTokens)
+	if err != nil {
+		return nil, NewError(http.StatusBadRequest, err.Error())
+	}
+
+	if err := c.agentClient.ReplyQuestion(ctx, sessionID, target.ID, answers); err != nil {
+		if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+			return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
+		}
+		return nil, NewError(http.StatusBadGateway, err.Error())
+	}
+
+	c.logger.Info("question request answered",
+		"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
+		"agent_session_id", sessionID,
+		"request_id", target.ID,
+	)
+	return &Message{Content: fmt.Sprintf("Question request %s answered", target.ID), Chat: req.Chat}, nil
+}
+
+func (c *AgentBridge) resolveInteractionSessionID(req *Message) (string, error) {
+	resolvedSessionID := strings.TrimSpace(req.Agent.SessionID)
+	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
+	if resolvedSessionID != "" {
+		if resolvedChatSessionID != "" {
+			if state, ok := c.conversationStore.Get(resolvedChatSessionID); ok {
+				boundSessionID := strings.TrimSpace(state.AgentSessionID)
+				if boundSessionID != "" && boundSessionID != resolvedSessionID {
+					return "", NewError(http.StatusBadRequest, "request session does not match current conversation binding")
+				}
+			}
+		}
+		return resolvedSessionID, nil
+	}
+
+	if resolvedChatSessionID == "" {
+		return "", NewError(http.StatusBadRequest, "chat session id is required")
+	}
+	state, ok := c.conversationStore.Get(resolvedChatSessionID)
+	if !ok || strings.TrimSpace(state.AgentSessionID) == "" {
+		return "", NewError(http.StatusBadRequest, "no agent session bound to current conversation")
+	}
+	return strings.TrimSpace(state.AgentSessionID), nil
+}
+
+func selectPermissionRequest(requests []agent.PermissionRequest, targetToken string) (agent.PermissionRequest, string, error) {
+	if len(requests) == 0 {
+		return agent.PermissionRequest{}, "No pending permission requests", fmt.Errorf("no pending permission requests")
+	}
+	if strings.TrimSpace(targetToken) == "" {
+		if len(requests) == 1 {
+			return requests[0], "", nil
+		}
+		return agent.PermissionRequest{}, formatPendingPermissions("Multiple pending permission requests; include an id or index:", requests), fmt.Errorf("permission target required")
+	}
+
+	if index, ok := parseInteractionIndex(targetToken, len(requests)); ok {
+		return requests[index], "", nil
+	}
+	for _, request := range requests {
+		if strings.TrimSpace(request.ID) == strings.TrimSpace(targetToken) {
+			return request, "", nil
+		}
+	}
+	return agent.PermissionRequest{}, fmt.Sprintf("Permission request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("permission request not found")
+}
+
+func selectQuestionRequest(requests []agent.QuestionRequest, targetToken string) (agent.QuestionRequest, string, error) {
+	if len(requests) == 0 {
+		return agent.QuestionRequest{}, "No pending question requests", fmt.Errorf("no pending question requests")
+	}
+	if strings.TrimSpace(targetToken) == "" {
+		if len(requests) == 1 {
+			return requests[0], "", nil
+		}
+		return agent.QuestionRequest{}, formatPendingQuestions("Multiple pending question requests; include an id or index:", requests), fmt.Errorf("question target required")
+	}
+
+	if index, ok := parseInteractionIndex(targetToken, len(requests)); ok {
+		return requests[index], "", nil
+	}
+	for _, request := range requests {
+		if strings.TrimSpace(request.ID) == strings.TrimSpace(targetToken) {
+			return request, "", nil
+		}
+	}
+	return agent.QuestionRequest{}, fmt.Sprintf("Question request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("question request not found")
+}
+
+func parseInteractionIndex(token string, length int) (int, bool) {
+	index, err := strconv.Atoi(strings.TrimSpace(token))
+	if err != nil || index < 1 || index > length {
+		return 0, false
+	}
+	return index - 1, true
+}
+
+func matchesQuestionTarget(requests []agent.QuestionRequest, token string) bool {
+	if _, ok := parseInteractionIndex(token, len(requests)); ok {
+		return true
+	}
+	return questionRequestIDMatches(requests, token)
+}
+
+func questionRequestIDMatches(requests []agent.QuestionRequest, token string) bool {
+	for _, request := range requests {
+		if strings.TrimSpace(request.ID) == strings.TrimSpace(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildQuestionAnswers(request agent.QuestionRequest, tokens []string) ([][]string, error) {
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("question answer is required")
+	}
+	questions := request.Questions
+	if len(questions) == 0 {
+		return [][]string{{strings.TrimSpace(strings.Join(tokens, " "))}}, nil
+	}
+
+	if len(questions) == 1 {
+		answers := resolveSingleQuestionAnswers(questions[0], tokens)
+		if len(answers) == 0 {
+			return nil, fmt.Errorf("question answer is required")
+		}
+		return [][]string{answers}, nil
+	}
+
+	if len(tokens) != len(questions) {
+		return nil, fmt.Errorf("expected %d answers", len(questions))
+	}
+	answers := make([][]string, 0, len(questions))
+	for index, question := range questions {
+		resolved := resolveQuestionTokens(question, []string{tokens[index]})
+		if len(resolved) == 0 {
+			return nil, fmt.Errorf("question answer is required")
+		}
+		answers = append(answers, resolved)
+	}
+	return answers, nil
+}
+
+func resolveSingleQuestionAnswers(question agent.Question, tokens []string) []string {
+	if len(question.Options) == 0 {
+		joined := strings.TrimSpace(strings.Join(tokens, " "))
+		if joined == "" {
+			return nil
+		}
+		return []string{joined}
+	}
+	return resolveQuestionTokens(question, tokens)
+}
+
+func resolveQuestionTokens(question agent.Question, tokens []string) []string {
+	answers := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
+			continue
+		}
+		if optionIndex, ok := parseInteractionIndex(trimmed, len(question.Options)); ok {
+			answers = append(answers, question.Options[optionIndex])
+			continue
+		}
+		answers = append(answers, trimmed)
+	}
+	if len(answers) > 0 {
+		return answers
+	}
+	joined := strings.TrimSpace(strings.Join(tokens, " "))
+	if joined == "" {
+		return nil
+	}
+	return []string{joined}
+}
+
+func formatPendingPermissions(header string, requests []agent.PermissionRequest) string {
+	builder := strings.Builder{}
+	builder.WriteString(header)
+	for index, request := range requests {
+		fmt.Fprintf(&builder, "\n%d. %s", index+1, strings.TrimSpace(request.ID))
+		if strings.TrimSpace(request.Permission) != "" {
+			fmt.Fprintf(&builder, " (%s)", strings.TrimSpace(request.Permission))
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func formatPendingQuestions(header string, requests []agent.QuestionRequest) string {
+	builder := strings.Builder{}
+	builder.WriteString(header)
+	for index, request := range requests {
+		fmt.Fprintf(&builder, "\n%d. %s", index+1, strings.TrimSpace(request.ID))
+		if len(request.Questions) > 0 && strings.TrimSpace(request.Questions[0].Text) != "" {
+			fmt.Fprintf(&builder, " (%s)", strings.TrimSpace(request.Questions[0].Text))
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func formatPermissionRequest(index int, request agent.PermissionRequest) string {
+	builder := strings.Builder{}
+	fmt.Fprintf(&builder, "Permission request %d: %s", index, strings.TrimSpace(request.ID))
+	if strings.TrimSpace(request.Permission) != "" {
+		fmt.Fprintf(&builder, "\nPermission: %s", strings.TrimSpace(request.Permission))
+	}
+	if len(request.Patterns) > 0 {
+		fmt.Fprintf(&builder, "\nPatterns: %s", strings.Join(request.Patterns, ", "))
+	}
+	builder.WriteString("\n\nReply with:")
+	fmt.Fprintf(&builder, "\n/permission once %s", strings.TrimSpace(request.ID))
+	fmt.Fprintf(&builder, "\n/permission always %s", strings.TrimSpace(request.ID))
+	fmt.Fprintf(&builder, "\n/permission reject %s", strings.TrimSpace(request.ID))
+	return strings.TrimSpace(builder.String())
+}
+
+func formatQuestionRequest(index int, request agent.QuestionRequest) string {
+	builder := strings.Builder{}
+	fmt.Fprintf(&builder, "Question request %d: %s", index, strings.TrimSpace(request.ID))
+	for questionIndex, question := range request.Questions {
+		fmt.Fprintf(&builder, "\n\n%d. %s", questionIndex+1, strings.TrimSpace(question.Text))
+		for optionIndex, option := range question.Options {
+			fmt.Fprintf(&builder, "\n   %d. %s", optionIndex+1, strings.TrimSpace(option))
+		}
+	}
+	builder.WriteString("\n\nReply with:")
+	if len(request.Questions) == 1 && len(request.Questions[0].Options) > 0 {
+		for optionIndex := range request.Questions[0].Options {
+			fmt.Fprintf(&builder, "\n/question %s %d", strings.TrimSpace(request.ID), optionIndex+1)
+		}
+	} else {
+		fmt.Fprintf(&builder, "\n/question %s <answer>", strings.TrimSpace(request.ID))
+	}
+	fmt.Fprintf(&builder, "\n/question reject %s", strings.TrimSpace(request.ID))
+	return strings.TrimSpace(builder.String())
+}
+
 func (c *AgentBridge) listSessions(ctx context.Context, directory string) (string, error) {
 	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(directory))
 	if err != nil {
@@ -727,6 +1117,10 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 			return "Usage: /agent <set|list> [name]"
 		case "directory":
 			return "Usage: /directory set <path>"
+		case "permission":
+			return "Usage: /permission <once|always|reject> [id|index]"
+		case "question":
+			return "Usage: /question [id|index] <answer...>\n       /question reject [id|index]"
 		}
 	}
 
@@ -742,6 +1136,9 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 		"- /agent set <name>",
 		"- /agent list",
 		"- /directory set <path>",
-		"- /help [new|session|model|agent|directory]",
+		"- /permission <once|always|reject> [id|index]",
+		"- /question [id|index] <answer...>",
+		"- /question reject [id|index]",
+		"- /help [new|session|model|agent|directory|permission|question]",
 	}, "\n")
 }
