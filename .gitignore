@@ -17,6 +17,7 @@ node_modules/
 dist
 .dist
 .builds
+.worktrees
 
 # Agents
 .worktrees

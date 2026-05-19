@@ -67,7 +67,10 @@ Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 等�
 - `/agent set <name>`
 - `/agent list`
 - `/directory set <path>`
-- `/help [new|session|model|agent|directory]`
+- `/permission <once|always|reject> [id|index]`
+- `/question [id|index] <answer...>`
+- `/question reject [id|index]`
+- `/help [new|session|model|agent|directory|permission|question]`
 
 ## Conversation store
 
