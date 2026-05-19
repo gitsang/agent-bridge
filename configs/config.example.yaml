@@ -32,7 +32,7 @@ agent:
     base_url: "http://127.0.0.1:4096"
     username: ""
     password: ""
-    timeout: 0s
+    timeout: 10m
 
 conversation_store:
   type: "memory" # memory | file

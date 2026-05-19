@@ -267,6 +267,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			for _, result := range results {
 				lastResult = result
+				afterCompletedAt = advanceCompletedCursor(afterCompletedAt, result)
 				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, result)
 				if err := reply(msg); err != nil {
 					return err
@@ -283,16 +284,21 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			}
 			for _, result := range results {
 				lastResult = result
+				afterCompletedAt = advanceCompletedCursor(afterCompletedAt, result)
 				msg := c.buildReplyMessage(ctx, req, resolvedSessionID, resolvedModelSpec, resolvedAgent, resolvedDirectory, result)
 				if err := reply(msg); err != nil {
 					return err
 				}
 			}
-			if lastResult != nil {
-				afterCompletedAt = lastResult.CompletedAt
-			}
 		}
 	}
+}
+
+func advanceCompletedCursor(current float64, msg *agent.Message) float64 {
+	if msg == nil || msg.CompletedAt <= current {
+		return current
+	}
+	return msg.CompletedAt
 }
 
 func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {

@@ -43,6 +43,25 @@ func TestHandlePromptPassesMessageOutputOptions(t *testing.T) {
 	}
 }
 
+func TestAdvanceCompletedCursorKeepsNewestCompletedResult(t *testing.T) {
+	after := float64(5)
+
+	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 0})
+	if got, want := after, float64(5); got != want {
+		t.Fatalf("advanceCompletedCursor() with unfinished result = %v, want %v", got, want)
+	}
+
+	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 4})
+	if got, want := after, float64(5); got != want {
+		t.Fatalf("advanceCompletedCursor() with older result = %v, want %v", got, want)
+	}
+
+	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 7})
+	if got, want := after, float64(7); got != want {
+		t.Fatalf("advanceCompletedCursor() with newer result = %v, want %v", got, want)
+	}
+}
+
 type fakeAgentClient struct {
 	promptHandle *agent.PromptHandle
 	pollMessages []*agent.Message

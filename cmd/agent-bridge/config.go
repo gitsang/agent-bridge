@@ -21,7 +21,7 @@ type Config struct {
 			BaseURL  string        `default:"http://127.0.0.1:4096" usage:"opencode agent server base URL" json:"base_url" yaml:"base_url"`
 			Username string        `default:"agent" usage:"opencode agent server username" json:"username" yaml:"username"`
 			Password string        `usage:"opencode agent server password" json:"password" yaml:"password"`
-			Timeout  time.Duration `default:"0s" usage:"opencode agent request timeout, 0 means no timeout" json:"timeout" yaml:"timeout"`
+			Timeout  time.Duration `default:"10m" usage:"opencode agent request timeout, default 10m, 0 means no timeout" json:"timeout" yaml:"timeout"`
 		} `json:"opencode" yaml:"opencode"`
 	} `json:"agent" yaml:"agent"`
 	ConversationStore struct {

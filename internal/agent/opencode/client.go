@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -255,6 +256,9 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 		if !ok {
 			continue
 		}
+		if assistant.Time.Completed <= 0 {
+			continue
+		}
 		msg := agent.Message{
 			ID: strings.TrimSpace(raw[i].Info.ID),
 			Model: agent.ModelRef{
@@ -346,11 +350,27 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	errCh := make(chan error, 1)
 
 	go func() {
-		defer close(doneCh)
-		_, err := c.client.Session.Prompt(ctx, resolvedSessionID, params)
-		if err != nil {
-			errCh <- err
+		promptCtx := ctx
+		var cancel context.CancelFunc
+		requestOptions := []option.RequestOption{}
+		if c.timeout > 0 {
+			promptCtx, cancel = context.WithTimeout(ctx, c.timeout)
+			requestOptions = append(requestOptions, option.WithRequestTimeout(c.timeout))
 		}
+		if cancel != nil {
+			defer cancel()
+		}
+
+		_, err := c.client.Session.Prompt(promptCtx, resolvedSessionID, params, requestOptions...)
+		if err != nil {
+			if c.timeout > 0 && errors.Is(promptCtx.Err(), context.DeadlineExceeded) {
+				_, _ = c.client.Session.Abort(ctx, resolvedSessionID, ocsdk.SessionAbortParams{})
+				err = fmt.Errorf("opencode prompt timed out after %s: %w", c.timeout, err)
+			}
+			errCh <- err
+			return
+		}
+		close(doneCh)
 	}()
 
 	return agent.NewPromptHandle(doneCh, errCh), nil
