@@ -38,9 +38,29 @@ type rawPermissionRequest struct {
 }
 
 type rawQuestion struct {
-	Text     string   `json:"text"`
-	Options  []string `json:"options"`
-	Multiple bool     `json:"multiple"`
+	Text     string              `json:"text"`
+	Question string              `json:"question"`
+	Options  []rawQuestionOption `json:"options"`
+	Multiple bool                `json:"multiple"`
+}
+
+type rawQuestionOption string
+
+func (o *rawQuestionOption) UnmarshalJSON(data []byte) error {
+	var label string
+	if err := json.Unmarshal(data, &label); err == nil {
+		*o = rawQuestionOption(label)
+		return nil
+	}
+
+	var object struct {
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(data, &object); err != nil {
+		return err
+	}
+	*o = rawQuestionOption(object.Label)
+	return nil
 }
 
 type rawQuestionRequest struct {
@@ -565,8 +585,8 @@ func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]
 		questions := make([]agent.Question, 0, len(item.Questions))
 		for _, question := range item.Questions {
 			questions = append(questions, agent.Question{
-				Text:     strings.TrimSpace(question.Text),
-				Options:  trimStringSlice(question.Options),
+				Text:     firstNonEmpty(strings.TrimSpace(question.Question), strings.TrimSpace(question.Text)),
+				Options:  trimQuestionOptions(question.Options),
 				Multiple: question.Multiple,
 			})
 		}
@@ -705,6 +725,30 @@ func toSession(s ocsdk.Session) agent.Session {
 		Title:     strings.TrimSpace(s.Title),
 		Directory: strings.TrimSpace(s.Directory),
 	}
+}
+
+func trimQuestionOptions(values []rawQuestionOption) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	resolved := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(string(value))
+		if trimmed == "" {
+			continue
+		}
+		resolved = append(resolved, trimmed)
+	}
+	return resolved
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func trimStringSlice(values []string) []string {

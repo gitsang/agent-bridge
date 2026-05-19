@@ -216,6 +216,52 @@ func TestListPendingQuestionsFiltersBySession(t *testing.T) {
 	}
 }
 
+func TestListPendingQuestionsMapsObjectOptionsAndQuestionField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Method, http.MethodGet; got != want {
+			t.Fatalf("method = %s, want %s", got, want)
+		}
+		if got, want := r.URL.Path, "/question"; got != want {
+			t.Fatalf("path = %s, want %s", got, want)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"id": "question-1",
+				"sessionID": "s1",
+				"questions": [
+					{
+						"question": "Proceed with deployment?",
+						"header": "Deploy",
+						"options": [
+							{"label": "Yes", "description": "Deploy now"},
+							{"label": "No", "description": "Stop deployment"}
+						]
+					}
+				]
+			}
+		]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	requests, err := client.ListPendingQuestions(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("ListPendingQuestions() error = %v", err)
+	}
+	if got, want := len(requests), 1; got != want {
+		t.Fatalf("question request count = %d, want %d", got, want)
+	}
+	question := requests[0].Questions[0]
+	if got, want := question.Text, "Proceed with deployment?"; got != want {
+		t.Fatalf("question text = %q, want %q", got, want)
+	}
+	if len(question.Options) != 2 || question.Options[0] != "Yes" || question.Options[1] != "No" {
+		t.Fatalf("question options = %#v, want Yes/No labels", question.Options)
+	}
+}
+
 func TestReplyQuestionPostsAnswers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.Method, http.MethodPost; got != want {
