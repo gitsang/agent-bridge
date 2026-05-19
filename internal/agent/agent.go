@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -146,6 +147,44 @@ func (h *PromptHandle) Err() <-chan error {
 	return h.err
 }
 
+var ErrInteractionNoLongerPending = errors.New("interaction request no longer pending")
+
+type InteractionTool struct {
+	MessageID string
+	CallID    string
+}
+
+type PermissionReply string
+
+const (
+	PermissionReplyOnce   PermissionReply = "once"
+	PermissionReplyAlways PermissionReply = "always"
+	PermissionReplyReject PermissionReply = "reject"
+)
+
+type PermissionRequest struct {
+	ID         string
+	SessionID  string
+	Permission string
+	Patterns   []string
+	Always     []string
+	Metadata   map[string]any
+	Tool       InteractionTool
+}
+
+type Question struct {
+	Text     string
+	Options  []string
+	Multiple bool
+}
+
+type QuestionRequest struct {
+	ID        string
+	SessionID string
+	Questions []Question
+	Tool      InteractionTool
+}
+
 type Client interface {
 	// Model
 	ListModels(ctx context.Context, directory string) ([]ModelInfo, error)
@@ -164,4 +203,11 @@ type Client interface {
 	GetLatestAssistantMessage(ctx context.Context, sessionID string) (*Message, error)
 	Prompt(ctx context.Context, sessionID string, prompt string, optfs ...PromptOptionFunc) (*PromptHandle, error)
 	PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output MessageOutputOptions) ([]*Message, error)
+
+	// Interaction
+	ListPendingPermissions(ctx context.Context, sessionID string) ([]PermissionRequest, error)
+	ReplyPermission(ctx context.Context, sessionID string, requestID string, reply PermissionReply) error
+	ListPendingQuestions(ctx context.Context, sessionID string) ([]QuestionRequest, error)
+	ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error
+	RejectQuestion(ctx context.Context, sessionID string, requestID string) error
 }

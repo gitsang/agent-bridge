@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,43 @@ import (
 	ocsdk "github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode-sdk-go/option"
 )
+
+type rawInteractionTool struct {
+	MessageID string `json:"messageID"`
+	CallID    string `json:"callID"`
+}
+
+type rawPermissionRequest struct {
+	ID         string             `json:"id"`
+	SessionID  string             `json:"sessionID"`
+	Permission string             `json:"permission"`
+	Title      string             `json:"title"`
+	Type       string             `json:"type"`
+	Pattern    any                `json:"pattern"`
+	Patterns   []string           `json:"patterns"`
+	Always     []string           `json:"always"`
+	Metadata   map[string]any     `json:"metadata"`
+	MessageID  string             `json:"messageID"`
+	CallID     string             `json:"callID"`
+	Tool       rawInteractionTool `json:"tool"`
+}
+
+type rawQuestion struct {
+	Text     string   `json:"text"`
+	Options  []string `json:"options"`
+	Multiple bool     `json:"multiple"`
+}
+
+type rawQuestionRequest struct {
+	ID        string             `json:"id"`
+	SessionID string             `json:"sessionID"`
+	Questions []rawQuestion      `json:"questions"`
+	Tool      rawInteractionTool `json:"tool"`
+}
+
+type rawQuestionReply struct {
+	Answers [][]string `json:"answers"`
+}
 
 type Option func(*Options)
 
@@ -446,6 +484,152 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
+func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) ([]agent.PermissionRequest, error) {
+	resolvedSessionID := strings.TrimSpace(sessionID)
+	if resolvedSessionID == "" {
+		return nil, fmt.Errorf("opencode session id is required")
+	}
+
+	var raw []rawPermissionRequest
+	if err := c.client.Get(ctx, "/permission", nil, &raw); err != nil {
+		return nil, err
+	}
+
+	requests := make([]agent.PermissionRequest, 0, len(raw))
+	for _, item := range raw {
+		if strings.TrimSpace(item.SessionID) != resolvedSessionID {
+			continue
+		}
+		messageID := strings.TrimSpace(item.Tool.MessageID)
+		if messageID == "" {
+			messageID = strings.TrimSpace(item.MessageID)
+		}
+		callID := strings.TrimSpace(item.Tool.CallID)
+		if callID == "" {
+			callID = strings.TrimSpace(item.CallID)
+		}
+		requests = append(requests, agent.PermissionRequest{
+			ID:         strings.TrimSpace(item.ID),
+			SessionID:  strings.TrimSpace(item.SessionID),
+			Permission: resolvePermissionLabel(item),
+			Patterns:   resolvePermissionPatterns(item),
+			Always:     trimStringSlice(item.Always),
+			Metadata:   item.Metadata,
+			Tool: agent.InteractionTool{
+				MessageID: messageID,
+				CallID:    callID,
+			},
+		})
+	}
+
+	return requests, nil
+}
+
+func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply agent.PermissionReply) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("opencode session id is required")
+	}
+	resolvedRequestID := strings.TrimSpace(requestID)
+	if resolvedRequestID == "" {
+		return fmt.Errorf("permission request id is required")
+	}
+	resolvedReply := agent.PermissionReply(strings.TrimSpace(string(reply)))
+	if resolvedReply != agent.PermissionReplyOnce && resolvedReply != agent.PermissionReplyAlways && resolvedReply != agent.PermissionReplyReject {
+		return fmt.Errorf("unsupported permission reply: %s", resolvedReply)
+	}
+
+	response := ocsdk.SessionPermissionRespondParamsResponse(resolvedReply)
+	ok, err := c.client.Session.Permissions.Respond(ctx, strings.TrimSpace(sessionID), resolvedRequestID, ocsdk.SessionPermissionRespondParams{Response: ocsdk.F(response)})
+	if isNotFound(err) || ((ok == nil || !*ok) && err == nil) {
+		return agent.ErrInteractionNoLongerPending
+	}
+	return err
+}
+
+func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]agent.QuestionRequest, error) {
+	resolvedSessionID := strings.TrimSpace(sessionID)
+	if resolvedSessionID == "" {
+		return nil, fmt.Errorf("opencode session id is required")
+	}
+
+	var raw []rawQuestionRequest
+	if err := c.client.Get(ctx, "/question", nil, &raw); err != nil {
+		return nil, err
+	}
+
+	requests := make([]agent.QuestionRequest, 0, len(raw))
+	for _, item := range raw {
+		if strings.TrimSpace(item.SessionID) != resolvedSessionID {
+			continue
+		}
+		questions := make([]agent.Question, 0, len(item.Questions))
+		for _, question := range item.Questions {
+			questions = append(questions, agent.Question{
+				Text:     strings.TrimSpace(question.Text),
+				Options:  trimStringSlice(question.Options),
+				Multiple: question.Multiple,
+			})
+		}
+		requests = append(requests, agent.QuestionRequest{
+			ID:        strings.TrimSpace(item.ID),
+			SessionID: strings.TrimSpace(item.SessionID),
+			Questions: questions,
+			Tool: agent.InteractionTool{
+				MessageID: strings.TrimSpace(item.Tool.MessageID),
+				CallID:    strings.TrimSpace(item.Tool.CallID),
+			},
+		})
+	}
+
+	return requests, nil
+}
+
+func (c *Client) ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("opencode session id is required")
+	}
+	resolvedRequestID := strings.TrimSpace(requestID)
+	if resolvedRequestID == "" {
+		return fmt.Errorf("question request id is required")
+	}
+	if len(answers) == 0 {
+		return fmt.Errorf("question answers are required")
+	}
+
+	resolvedAnswers := make([][]string, 0, len(answers))
+	for _, answerSet := range answers {
+		resolvedAnswerSet := trimStringSlice(answerSet)
+		if len(resolvedAnswerSet) == 0 {
+			return fmt.Errorf("question answers are required")
+		}
+		resolvedAnswers = append(resolvedAnswers, resolvedAnswerSet)
+	}
+
+	var ok bool
+	err := c.client.Post(ctx, fmt.Sprintf("/question/%s/reply", resolvedRequestID), rawQuestionReply{Answers: resolvedAnswers}, &ok)
+	if isNotFound(err) || (!ok && err == nil) {
+		return agent.ErrInteractionNoLongerPending
+	}
+	return err
+}
+
+func (c *Client) RejectQuestion(ctx context.Context, sessionID string, requestID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("opencode session id is required")
+	}
+	resolvedRequestID := strings.TrimSpace(requestID)
+	if resolvedRequestID == "" {
+		return fmt.Errorf("question request id is required")
+	}
+
+	var ok bool
+	err := c.client.Post(ctx, fmt.Sprintf("/question/%s/reject", resolvedRequestID), nil, &ok)
+	if isNotFound(err) || (!ok && err == nil) {
+		return agent.ErrInteractionNoLongerPending
+	}
+	return err
+}
+
 func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output agent.MessageOutputOptions) (*agent.Message, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
@@ -521,6 +705,62 @@ func toSession(s ocsdk.Session) agent.Session {
 		Title:     strings.TrimSpace(s.Title),
 		Directory: strings.TrimSpace(s.Directory),
 	}
+}
+
+func trimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	resolved := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		resolved = append(resolved, trimmed)
+	}
+	return resolved
+}
+
+func resolvePermissionLabel(request rawPermissionRequest) string {
+	if trimmed := strings.TrimSpace(request.Permission); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(request.Title); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(request.Type)
+}
+
+func resolvePermissionPatterns(request rawPermissionRequest) []string {
+	patterns := trimStringSlice(request.Patterns)
+	if len(patterns) > 0 {
+		return patterns
+	}
+	switch pattern := request.Pattern.(type) {
+	case string:
+		return trimStringSlice([]string{pattern})
+	case []any:
+		values := make([]string, 0, len(pattern))
+		for _, value := range pattern {
+			if text, ok := value.(string); ok {
+				values = append(values, text)
+			}
+		}
+		return trimStringSlice(values)
+	}
+	return nil
+}
+
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *ocsdk.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusNotFound
 }
 
 func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string {
