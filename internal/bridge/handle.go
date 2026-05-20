@@ -1028,22 +1028,32 @@ func formatPermissionRequest(index int, request agent.PermissionRequest) string 
 
 func formatQuestionRequest(index int, request agent.QuestionRequest) string {
 	builder := strings.Builder{}
-	fmt.Fprintf(&builder, "Question request %d: %s", index, strings.TrimSpace(request.ID))
+	requestID := strings.TrimSpace(request.ID)
+	fmt.Fprintf(&builder, "Question request %d: %s", index, requestID)
 	for questionIndex, question := range request.Questions {
-		fmt.Fprintf(&builder, "\n\n%d. %s", questionIndex+1, strings.TrimSpace(question.Text))
+		questionText := strings.TrimSpace(question.Text)
+		if len(request.Questions) > 1 {
+			fmt.Fprintf(&builder, "\n\nQuestion %d: %s", questionIndex+1, questionText)
+		} else {
+			fmt.Fprintf(&builder, "\n\n%s", questionText)
+		}
 		for optionIndex, option := range question.Options {
-			fmt.Fprintf(&builder, "\n   %d. %s", optionIndex+1, strings.TrimSpace(option))
+			fmt.Fprintf(&builder, "\n%d. %s", optionIndex+1, strings.TrimSpace(option))
 		}
 	}
 	builder.WriteString("\n\nReply with:")
 	if len(request.Questions) == 1 && len(request.Questions[0].Options) > 0 {
 		for optionIndex := range request.Questions[0].Options {
-			fmt.Fprintf(&builder, "\n/question %s %d", strings.TrimSpace(request.ID), optionIndex+1)
+			fmt.Fprintf(&builder, "\n/question <question-id> %d", optionIndex+1)
 		}
 	} else {
-		fmt.Fprintf(&builder, "\n/question %s <answer>", strings.TrimSpace(request.ID))
+		builder.WriteString("\n/question <question-id> <answer>")
 	}
-	fmt.Fprintf(&builder, "\n/question reject %s", strings.TrimSpace(request.ID))
+	builder.WriteString("\n/question reject <question-id>")
+	if requestID != "" {
+		fmt.Fprintf(&builder, "\n\nTip: replace <question-id> with %s", requestID)
+		fmt.Fprintf(&builder, "\n<question-id> = %s", requestID)
+	}
 	return strings.TrimSpace(builder.String())
 }
 

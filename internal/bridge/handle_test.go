@@ -462,11 +462,43 @@ func TestHandlePromptForwardsPendingQuestionBeforeAssistantReply(t *testing.T) {
 	if got, want := len(replies), 2; got != want {
 		t.Fatalf("reply count = %d, want %d", got, want)
 	}
-	if got := replies[0].Content; !strings.Contains(got, "Question request 1") || !strings.Contains(got, "Environment?") || !strings.Contains(got, "production") || !strings.Contains(got, "/question question-1 2") {
-		t.Fatalf("first reply = %q, want question request", got)
+	if got := replies[0].Content; !strings.Contains(got, "Question request 1") || !strings.Contains(got, "Environment?") || strings.Contains(got, "1. Environment?") || !strings.Contains(got, "2. production") || !strings.Contains(got, "/question <question-id> 2") || strings.Contains(got, "/question question-1 2") {
+		t.Fatalf("first reply = %q, want question request template", got)
 	}
 	if got, want := replies[1].Content, "assistant reply"; got != want {
 		t.Fatalf("second reply = %q, want %q", got, want)
+	}
+}
+
+func TestFormatQuestionRequestUsesTemplateReplyHint(t *testing.T) {
+	request := agent.QuestionRequest{
+		ID: "que_e435186110017C9zyr55kstCbi",
+		Questions: []agent.Question{{
+			Text:    "如果今天只安排一件轻松的事，你更想做哪一种？",
+			Options: []string{"散步", "看电影", "读书", "做饭"},
+		}},
+	}
+
+	got := formatQuestionRequest(1, request)
+
+	if strings.Contains(got, "1. 如果今天只安排") {
+		t.Fatalf("formatQuestionRequest() = %q, should not number question text", got)
+	}
+	for _, want := range []string{
+		"Question request 1: que_e435186110017C9zyr55kstCbi",
+		"如果今天只安排一件轻松的事，你更想做哪一种？",
+		"1. 散步",
+		"4. 做饭",
+		"/question <question-id> 1",
+		"/question reject <question-id>",
+		"<question-id> = que_e435186110017C9zyr55kstCbi",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatQuestionRequest() = %q, want %q", got, want)
+		}
+	}
+	if strings.Contains(got, "/question que_e435186110017C9zyr55kstCbi 1") {
+		t.Fatalf("formatQuestionRequest() = %q, should use placeholder command", got)
 	}
 }
 
