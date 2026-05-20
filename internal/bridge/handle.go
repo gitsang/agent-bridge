@@ -705,9 +705,13 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		return nil, NewError(http.StatusBadRequest, "usage: /question [id|index] <answer...> or /question reject [id|index]")
 	}
 
+	tokens := invocation.Positionals[1:]
 	sessionID, err := c.resolveInteractionSessionID(req)
 	if err != nil {
-		return nil, err
+		if !hasExplicitQuestionTarget(tokens) {
+			return nil, err
+		}
+		sessionID = ""
 	}
 
 	requests, err := c.agentClient.ListPendingQuestions(ctx, sessionID)
@@ -715,7 +719,6 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
 
-	tokens := invocation.Positionals[1:]
 	if strings.EqualFold(strings.TrimSpace(tokens[0]), "reject") {
 		targetToken := ""
 		if len(tokens) > 1 {
@@ -725,7 +728,11 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		if err != nil {
 			return &Message{Content: message, Chat: req.Chat}, nil
 		}
-		if err := c.agentClient.RejectQuestion(ctx, sessionID, target.ID); err != nil {
+		targetSessionID, err := resolveQuestionRequestSessionID(sessionID, target)
+		if err != nil {
+			return nil, NewError(http.StatusBadGateway, err.Error())
+		}
+		if err := c.agentClient.RejectQuestion(ctx, targetSessionID, target.ID); err != nil {
 			if errors.Is(err, agent.ErrInteractionNoLongerPending) {
 				return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 			}
@@ -733,7 +740,7 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		}
 		c.logger.Info("question request rejected",
 			"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
-			"agent_session_id", sessionID,
+			"agent_session_id", targetSessionID,
 			"request_id", target.ID,
 		)
 		return &Message{Content: fmt.Sprintf("Question request %s rejected", target.ID), Chat: req.Chat}, nil
@@ -744,8 +751,8 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 	if len(requests) == 0 {
 		return &Message{Content: "No pending question requests", Chat: req.Chat}, nil
 	}
-	if questionRequestIDMatches(requests, tokens[0]) {
-		targetToken = strings.TrimSpace(tokens[0])
+	if isQuestionRequestID(tokens[0]) {
+		targetToken = normalizeInteractionID(tokens[0])
 		answerTokens = tokens[1:]
 	} else if len(requests) != 1 {
 		if !matchesQuestionTarget(requests, tokens[0]) {
@@ -764,7 +771,11 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		return nil, NewError(http.StatusBadRequest, err.Error())
 	}
 
-	if err := c.agentClient.ReplyQuestion(ctx, sessionID, target.ID, answers); err != nil {
+	targetSessionID, err := resolveQuestionRequestSessionID(sessionID, target)
+	if err != nil {
+		return nil, NewError(http.StatusBadGateway, err.Error())
+	}
+	if err := c.agentClient.ReplyQuestion(ctx, targetSessionID, target.ID, answers); err != nil {
 		if errors.Is(err, agent.ErrInteractionNoLongerPending) {
 			return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 		}
@@ -773,10 +784,46 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 
 	c.logger.Info("question request answered",
 		"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
-		"agent_session_id", sessionID,
+		"agent_session_id", targetSessionID,
 		"request_id", target.ID,
 	)
 	return &Message{Content: fmt.Sprintf("Question request %s answered", target.ID), Chat: req.Chat}, nil
+}
+
+func hasExplicitQuestionTarget(tokens []string) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(tokens[0]), "reject") {
+		return len(tokens) > 1 && isQuestionRequestID(tokens[1])
+	}
+	return isQuestionRequestID(tokens[0])
+}
+
+func isQuestionRequestID(token string) bool {
+	resolved := normalizeInteractionID(token)
+	return strings.HasPrefix(resolved, "que") || strings.HasPrefix(resolved, "question-")
+}
+
+func normalizeInteractionID(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(value))
+}
+
+func resolveQuestionRequestSessionID(fallback string, request agent.QuestionRequest) (string, error) {
+	resolved := strings.TrimSpace(fallback)
+	if resolved != "" {
+		return resolved, nil
+	}
+	resolved = strings.TrimSpace(request.SessionID)
+	if resolved == "" {
+		return "", fmt.Errorf("question request session id is required")
+	}
+	return resolved, nil
 }
 
 func (c *AgentBridge) resolveInteractionSessionID(req *Message) (string, error) {
@@ -840,8 +887,9 @@ func selectQuestionRequest(requests []agent.QuestionRequest, targetToken string)
 	if index, ok := parseInteractionIndex(targetToken, len(requests)); ok {
 		return requests[index], "", nil
 	}
+	resolvedTargetToken := normalizeInteractionID(targetToken)
 	for _, request := range requests {
-		if strings.TrimSpace(request.ID) == strings.TrimSpace(targetToken) {
+		if normalizeInteractionID(request.ID) == resolvedTargetToken {
 			return request, "", nil
 		}
 	}
@@ -864,8 +912,9 @@ func matchesQuestionTarget(requests []agent.QuestionRequest, token string) bool 
 }
 
 func questionRequestIDMatches(requests []agent.QuestionRequest, token string) bool {
+	resolvedToken := normalizeInteractionID(token)
 	for _, request := range requests {
-		if strings.TrimSpace(request.ID) == strings.TrimSpace(token) {
+		if normalizeInteractionID(request.ID) == resolvedToken {
 			return true
 		}
 	}

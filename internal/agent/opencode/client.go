@@ -568,9 +568,6 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 
 func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]agent.QuestionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
-	if resolvedSessionID == "" {
-		return nil, fmt.Errorf("opencode session id is required")
-	}
 
 	var raw []rawQuestionRequest
 	if err := c.client.Get(ctx, "/question", nil, &raw); err != nil {
@@ -579,7 +576,7 @@ func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]
 
 	requests := make([]agent.QuestionRequest, 0, len(raw))
 	for _, item := range raw {
-		if strings.TrimSpace(item.SessionID) != resolvedSessionID {
+		if resolvedSessionID != "" && strings.TrimSpace(item.SessionID) != resolvedSessionID {
 			continue
 		}
 		questions := make([]agent.Question, 0, len(item.Questions))

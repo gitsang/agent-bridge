@@ -209,6 +209,35 @@ func TestHandleQuestionCommandAcceptsExplicitIDForSinglePendingRequest(t *testin
 	}
 }
 
+func TestHandleQuestionCommandAcceptsExplicitIDWithoutConversationBinding(t *testing.T) {
+	client := &fakeAgentClient{
+		pendingQuestions: []agent.QuestionRequest{{
+			ID:        "que_e3fc14a980019F6xw5McDKtETi",
+			SessionID: "s1",
+			Questions: []agent.Question{{Text: "Continue?", Options: []string{"Yes", "No"}}},
+		}},
+	}
+	bridge := New(WithAgentClient(client))
+
+	replies := collectReplies(t, bridge, "/question que_e3fc14a980019F6xw5McDKtETi 1")
+
+	if got, want := client.listPendingQuestionsSessionID, ""; got != want {
+		t.Fatalf("ListPendingQuestions() session = %q, want global query", got)
+	}
+	if got, want := client.replyQuestionSessionID, "s1"; got != want {
+		t.Fatalf("ReplyQuestion() session = %q, want %q", got, want)
+	}
+	if got, want := client.replyQuestionRequestID, "que_e3fc14a980019F6xw5McDKtETi"; got != want {
+		t.Fatalf("ReplyQuestion() request = %q, want %q", got, want)
+	}
+	if len(client.replyQuestionAnswers) != 1 || len(client.replyQuestionAnswers[0]) != 1 || client.replyQuestionAnswers[0][0] != "Yes" {
+		t.Fatalf("ReplyQuestion() answers = %#v, want [[Yes]]", client.replyQuestionAnswers)
+	}
+	if got := replies[0].Content; !strings.Contains(got, "Question request que_e3fc14a980019F6xw5McDKtETi answered") {
+		t.Fatalf("reply content = %q, want question success", got)
+	}
+}
+
 func TestHandleQuestionCommandMapsOptionIndexForSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
 		pendingQuestions: []agent.QuestionRequest{{
@@ -305,6 +334,66 @@ func TestHandleQuestionCommandTargetsIDWhenMultiplePending(t *testing.T) {
 	}
 	if len(client.replyQuestionAnswers) != 1 || len(client.replyQuestionAnswers[0]) != 1 || client.replyQuestionAnswers[0][0] != "eu" {
 		t.Fatalf("ReplyQuestion() answers = %#v, want [[eu]]", client.replyQuestionAnswers)
+	}
+}
+
+func TestHandleQuestionCommandTargetsQueIDWhenMultiplePendingWithoutBinding(t *testing.T) {
+	client := &fakeAgentClient{
+		pendingQuestions: []agent.QuestionRequest{
+			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []agent.Question{{Text: "如果今天只能选一种补给，你会选哪一个？", Options: []string{"第一", "第二"}}}},
+			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []agent.Question{{Text: "如果今天只能做一件让自己更轻松的事，你会选哪一种？", Options: []string{"休息", "散步"}}}},
+		},
+	}
+	bridge := New(WithAgentClient(client))
+
+	collectReplies(t, bridge, "/question que_e433cceeb001KUfhw7pLIFIWJ5 1")
+
+	if got, want := client.replyQuestionSessionID, "s2"; got != want {
+		t.Fatalf("ReplyQuestion() session = %q, want %q", got, want)
+	}
+	if got, want := client.replyQuestionRequestID, "que_e433cceeb001KUfhw7pLIFIWJ5"; got != want {
+		t.Fatalf("ReplyQuestion() request = %q, want %q", got, want)
+	}
+	if len(client.replyQuestionAnswers) != 1 || len(client.replyQuestionAnswers[0]) != 1 || client.replyQuestionAnswers[0][0] != "休息" {
+		t.Fatalf("ReplyQuestion() answers = %#v, want [[休息]]", client.replyQuestionAnswers)
+	}
+}
+
+func TestHandleQuestionCommandTargetsQueIDWithInvisibleFormatting(t *testing.T) {
+	client := &fakeAgentClient{
+		pendingQuestions: []agent.QuestionRequest{
+			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []agent.Question{{Text: "First?", Options: []string{"One"}}}},
+			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []agent.Question{{Text: "Second?", Options: []string{"Two"}}}},
+		},
+	}
+	bridge := New(WithAgentClient(client))
+
+	collectReplies(t, bridge, "/question que_e433cceeb001​KUfhw7pLIFIWJ5 1")
+
+	if got, want := client.replyQuestionRequestID, "que_e433cceeb001KUfhw7pLIFIWJ5"; got != want {
+		t.Fatalf("ReplyQuestion() request = %q, want %q", got, want)
+	}
+	if len(client.replyQuestionAnswers) != 1 || len(client.replyQuestionAnswers[0]) != 1 || client.replyQuestionAnswers[0][0] != "Two" {
+		t.Fatalf("ReplyQuestion() answers = %#v, want [[Two]]", client.replyQuestionAnswers)
+	}
+}
+
+func TestHandleQuestionCommandExplicitUnknownQueIDDoesNotShowMultiplePending(t *testing.T) {
+	client := &fakeAgentClient{
+		pendingQuestions: []agent.QuestionRequest{
+			{ID: "que_one", SessionID: "s1", Questions: []agent.Question{{Text: "First?"}}},
+			{ID: "que_two", SessionID: "s2", Questions: []agent.Question{{Text: "Second?"}}},
+		},
+	}
+	bridge := New(WithAgentClient(client))
+
+	replies := collectReplies(t, bridge, "/question que_missing 1")
+
+	if client.replyQuestionCalls != 0 {
+		t.Fatalf("ReplyQuestion() calls = %d, want 0", client.replyQuestionCalls)
+	}
+	if got := replies[0].Content; !strings.Contains(got, "Question request no longer pending: que_missing") || strings.Contains(got, "Multiple pending") {
+		t.Fatalf("reply content = %q, want stale explicit id message", got)
 	}
 }
 
@@ -493,6 +582,8 @@ type fakeAgentClient struct {
 	pendingPermissions []agent.PermissionRequest
 	pendingQuestions   []agent.QuestionRequest
 
+	listPendingQuestionsSessionID string
+
 	replyPermissionCalls     int
 	replyPermissionSessionID string
 	replyPermissionRequestID string
@@ -565,7 +656,8 @@ func (c *fakeAgentClient) ReplyPermission(_ context.Context, sessionID string, r
 	return nil
 }
 
-func (c *fakeAgentClient) ListPendingQuestions(context.Context, string) ([]agent.QuestionRequest, error) {
+func (c *fakeAgentClient) ListPendingQuestions(_ context.Context, sessionID string) ([]agent.QuestionRequest, error) {
+	c.listPendingQuestionsSessionID = sessionID
 	return c.pendingQuestions, nil
 }
 

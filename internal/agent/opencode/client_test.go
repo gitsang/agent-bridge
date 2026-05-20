@@ -262,6 +262,36 @@ func TestListPendingQuestionsMapsObjectOptionsAndQuestionField(t *testing.T) {
 	}
 }
 
+func TestListPendingQuestionsAllowsEmptySessionForGlobalList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Method, http.MethodGet; got != want {
+			t.Fatalf("method = %s, want %s", got, want)
+		}
+		if got, want := r.URL.Path, "/question"; got != want {
+			t.Fatalf("path = %s, want %s", got, want)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"id": "question-1", "sessionID": "s1", "questions": [{"text": "First?"}]},
+			{"id": "question-2", "sessionID": "s2", "questions": [{"text": "Second?"}]}
+		]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	requests, err := client.ListPendingQuestions(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListPendingQuestions() error = %v", err)
+	}
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("question request count = %d, want %d", got, want)
+	}
+	if got, want := requests[1].SessionID, "s2"; got != want {
+		t.Fatalf("second question session = %q, want %q", got, want)
+	}
+}
+
 func TestReplyQuestionPostsAnswers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.Method, http.MethodPost; got != want {
