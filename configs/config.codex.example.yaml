@@ -1,0 +1,45 @@
+log:
+  handlers:
+    default: "default"
+  providers:
+    default:
+      - format: "json"
+        level: "debug"
+        verbosity: 3
+        output:
+          stdout:
+            enable: true
+
+plugins:
+  openai-compatible:
+    openai-compatible:
+      listen: ":24368"
+  ume:
+    ume:
+      listen: ":24369"
+      format: "text" # text | card
+
+agent:
+  driver: codex
+  message_output:
+    include:
+      - answer
+      - reasoning
+      - action
+      - artifact
+      - diagnostic
+  codex:
+    command: "codex"
+    args:
+      - "app-server"
+      - "--listen"
+      - "stdio://"
+    env: {}
+    timeout: 30m
+    initialize_timeout: 15s
+
+conversation_store:
+  type: "memory" # memory | file
+  file_path: "data/conversation_store.json"
+  ttl: 24h
+  max_items: 1024

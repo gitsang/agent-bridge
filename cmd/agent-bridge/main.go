@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/agent/codex"
 	"github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
@@ -179,6 +180,14 @@ func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
 			opencode.WithLogger(logger),
 			opencode.WithAuthentication(c.Agent.Opencode.Username, c.Agent.Opencode.Password),
 			opencode.WithTimeout(c.Agent.Opencode.Timeout),
+		), nil
+	case "codex":
+		return codex.NewClient(
+			codex.WithLogger(logger),
+			codex.WithCommand(c.Agent.Codex.Command, c.Agent.Codex.Args...),
+			codex.WithEnv(c.Agent.Codex.Env),
+			codex.WithTimeout(c.Agent.Codex.Timeout),
+			codex.WithInitializeTimeout(c.Agent.Codex.InitializeTimeout),
 		), nil
 	default:
 		return nil, fmt.Errorf("unsupported agent driver %q", c.Agent.Driver)
