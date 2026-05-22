@@ -23,6 +23,13 @@ type Config struct {
 			Password string        `usage:"opencode agent server password" json:"password" yaml:"password"`
 			Timeout  time.Duration `default:"10m" usage:"opencode agent request timeout, default 10m, 0 means no timeout" json:"timeout" yaml:"timeout"`
 		} `json:"opencode" yaml:"opencode"`
+		Codex struct {
+			Command           string            `default:"codex" usage:"codex app-server command" json:"command" yaml:"command"`
+			Args              []string          `default:"[app-server,--listen,stdio://]" usage:"codex app-server command args" json:"args" yaml:"args"`
+			Env               map[string]string `usage:"codex app-server extra environment" json:"env" yaml:"env"`
+			Timeout           time.Duration     `default:"30m" usage:"codex turn timeout, default 30m, 0 means no timeout" json:"timeout" yaml:"timeout"`
+			InitializeTimeout time.Duration     `default:"15s" usage:"codex app-server initialize timeout" json:"initialize_timeout" yaml:"initialize_timeout"`
+		} `json:"codex" yaml:"codex"`
 	} `json:"agent" yaml:"agent"`
 	ConversationStore struct {
 		Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`

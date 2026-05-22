@@ -1,5 +1,5 @@
 config.*.yaml
-!config.example.yaml
+!*.example.yaml
 
 opencode.json
 auth.json
