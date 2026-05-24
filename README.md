@@ -89,6 +89,27 @@ agent:
 
 示例配置见 `configs/config.codex.example.yaml` 和 `configs/config.codex.develop.yaml`。
 
+## Claude Code driver
+
+可以使用 Claude Code CLI 的非交互 `stream-json` 输出作为 agent driver：
+
+```yaml
+agent:
+  driver: claude
+  claude:
+    command: "claude"
+    args: ["--bare", "-p", "--output-format", "stream-json", "--verbose"]
+    timeout: 30m
+```
+
+Claude driver 每次 prompt 启动一次 `claude -p` 进程，并通过 `--session-id` / `--resume` 维持 Claude Code 本地会话连续性。`--bare` 是 Claude Code 官方推荐的脚本模式，会跳过 hooks、plugins、MCP、自动记忆和 keychain 读取；如果使用该模式，请通过 `ANTHROPIC_API_KEY` 或 `--settings` 中的 `apiKeyHelper` 提供认证。若需要沿用本机 Claude Code 登录态，可从 `args` 中移除 `--bare`。
+
+由于 Claude CLI 的 `-p` 参数需要把 prompt 作为进程参数传入，运行期间本机其他同权限进程可能通过 `ps` 或 `/proc` 看到 prompt 内容。不要把密钥放进 prompt；也不建议把 `ANTHROPIC_API_KEY` 等密钥写进配置文件的 `env` 字段，优先使用进程环境变量或 Claude Code settings 中的 `apiKeyHelper`。
+
+当前 Claude Code CLI 没有 OpenCode/Codex 那种可枚举、可回复的 mid-turn 权限/问题队列，所以 Claude driver 的等价范围限于 prompt、session/resume 和流式结果输出；`/permission` 和 `/question` 不会产生待处理项。需要自动授权工具时请通过 `args` 配置 Claude Code 的 `--allowedTools` 或 `--permission-mode`。`/session list` 只列出本进程创建过的 Claude sessions；如果已有 Claude Code session id，可以用 `/session attach <id>` 绑定并通过 `--resume` 继续。
+
+示例配置见 `configs/config.claude.example.yaml`。
+
 ## Conversation store
 
 默认使用内存会话存储，进程重启后会清空。
@@ -111,6 +132,6 @@ conversation_store:
 - [x] 支持 agent 多轮响应（通过 reply 回调逐条推送）
 - [ ] 支持 SO 插件
 - [ ] 完善部署和使用教程
-- [ ] 支持 ACP 协议对接 claude code 等 agent
+- [x] 支持 Claude Code agent driver（通过 `claude -p --output-format stream-json`）
 - [x] 支持 Codex agent driver（通过 `codex app-server`）
 - [ ] 支持其他 agent 接入
