@@ -18,6 +18,12 @@ plugins:
     ume:
       listen: ":24369"
       format: "text" # text | card
+  mattermost:
+    mattermost:
+      listen: ":24370"
+      token: "mattermost-token"
+      response_url_hosts:
+        - "mattermost.example.com"
 
 agent:
   driver: codex
