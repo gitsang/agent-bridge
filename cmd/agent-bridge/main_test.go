@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gitsang/agent-bridge/internal/agent/claude"
 	"github.com/gitsang/agent-bridge/internal/agent/codex"
 )
 
@@ -22,5 +23,21 @@ func TestBuildAgentClientSupportsCodexDriver(t *testing.T) {
 	}
 	if _, ok := client.(*codex.Client); !ok {
 		t.Fatalf("buildAgentClient() = %T, want *codex.Client", client)
+	}
+}
+
+func TestBuildAgentClientSupportsClaudeDriver(t *testing.T) {
+	var c Config
+	c.Agent.Driver = "claude"
+	c.Agent.Claude.Command = "claude"
+	c.Agent.Claude.Args = []string{"--bare", "-p", "--output-format", "stream-json", "--verbose"}
+	c.Agent.Claude.Timeout = time.Minute
+
+	client, err := buildAgentClient(c, slog.Default())
+	if err != nil {
+		t.Fatalf("buildAgentClient() error = %v", err)
+	}
+	if _, ok := client.(*claude.Client); !ok {
+		t.Fatalf("buildAgentClient() = %T, want *claude.Client", client)
 	}
 }
