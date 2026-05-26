@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/docker/go-units v0.5.0
-	github.com/gitsang/configer v0.0.3-0.20260522065231-ecafb7b72926
+	github.com/gitsang/configer v0.0.3-0.20260524154703-3eca3b9cdd9e
 	github.com/gitsang/logi v0.0.2
 	github.com/natefinch/lumberjack v2.0.0+incompatible
 	github.com/rodaine/table v1.3.1
