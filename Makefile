@@ -154,7 +154,7 @@ build-binary: $(DIST_BIN)
 		-ldflags "$(LD_FLAGS)" \
 		-o "$(DIST_BIN)/$(PROJECT)" \
 		$(GO_CMD_PATH)
-	@echo "Built binary: "$(DIST_BIN)/$(PROJECT)"
+	@echo "Built binary: $(DIST_BIN)/$(PROJECT)"
 
 
 .PHONY: build-container
