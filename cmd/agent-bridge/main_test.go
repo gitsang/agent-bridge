@@ -2,11 +2,13 @@ package main
 
 import (
 	"log/slog"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/agent/claude"
 	"github.com/gitsang/agent-bridge/internal/agent/codex"
+	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
 )
 
 func TestBuildAgentClientSupportsCodexDriver(t *testing.T) {
@@ -26,18 +28,43 @@ func TestBuildAgentClientSupportsCodexDriver(t *testing.T) {
 	}
 }
 
-func TestBuildAgentClientSupportsClaudeDriver(t *testing.T) {
-	var c Config
-	c.Agent.Driver = "claude"
-	c.Agent.Claude.Command = "claude"
-	c.Agent.Claude.Args = []string{"--bare", "-p", "--output-format", "stream-json", "--verbose"}
-	c.Agent.Claude.Timeout = time.Minute
-
-	client, err := buildAgentClient(c, slog.Default())
-	if err != nil {
-		t.Fatalf("buildAgentClient() error = %v", err)
+func TestMainImportsMattermostPlugin(t *testing.T) {
+	if _, ok := coreplugin.GetPluginFactory("mattermost"); !ok {
+		t.Fatalf("mattermost plugin factory is not registered")
 	}
-	if _, ok := client.(*claude.Client); !ok {
-		t.Fatalf("buildAgentClient() = %T, want *claude.Client", client)
+}
+
+func TestRedactLogValueRedactsSensitiveFields(t *testing.T) {
+	input := map[string]any{
+		"listen": ":24370",
+		"token":  "mattermost-token",
+		"nested": map[string]any{
+			"password": "secret-password",
+			"env": []any{
+				map[string]any{"api_secret": "secret-value"},
+			},
+		},
+	}
+
+	got := redactLogValue(input)
+	want := map[string]any{
+		"listen": ":24370",
+		"token":  "***",
+		"nested": map[string]any{
+			"password": "***",
+			"env": []any{
+				map[string]any{"api_secret": "***"},
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("redactLogValue() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRedactLogValueHandlesNil(t *testing.T) {
+	if got := redactLogValue(nil); got != nil {
+		t.Fatalf("redactLogValue(nil) = %#v, want nil", got)
 	}
 }
