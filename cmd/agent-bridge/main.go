@@ -45,7 +45,7 @@ func init() {
 		configer.WithTemplate((*Config)(nil)),
 		configer.WithEnvBind(
 			configer.WithEnvPrefix("AGENT_BRIDGE"),
-			configer.WithEnvDelim("_"),
+			configer.WithEnvDelim("__"),
 		),
 		configer.WithFlagBind(
 			configer.WithCommand(rootCmd),
