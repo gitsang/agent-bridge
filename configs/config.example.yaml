@@ -1,0 +1,66 @@
+log:
+  handlers:
+    default: "default"
+  providers:
+    default:
+      - format: "json"
+        level: "debug"
+        verbosity: 3
+        output:
+          stdout:
+            enable: true
+
+plugins:
+  openai-compatible:
+    openai-compatible:
+      listen: ":24368"
+  ume:
+    ume:
+      listen: ":24369"
+      format: "text" # text | card
+  mattermost:
+    mattermost:
+      listen: ":24370"
+      token: "mattermost-token"
+      response_url_hosts:
+        - "mattermost.example.com"
+
+agent:
+  driver: opencode
+  message_output:
+    include:
+      - answer
+      - reasoning
+      - action
+      - artifact
+      - diagnostic
+  opencode:
+    base_url: "http://127.0.0.1:4096"
+    username: ""
+    password: ""
+    timeout: 10m
+  codex:
+    command: "codex"
+    args:
+      - "app-server"
+      - "--listen"
+      - "stdio://"
+    env: {}
+    timeout: 30m
+    initialize_timeout: 15s
+  claude:
+    command: "claude"
+    args:
+      - "--bare"
+      - "-p"
+      - "--output-format"
+      - "stream-json"
+      - "--verbose"
+    env: {}
+    timeout: 30m
+
+conversation_store:
+  type: "memory" # memory | file
+  file_path: "data/conversation_store.json"
+  ttl: 24h
+  max_items: 1024
