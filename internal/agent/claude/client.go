@@ -636,6 +636,24 @@ type claudeMessageError struct {
 	Message string `json:"message"`
 }
 
+func (e *claudeMessageError) UnmarshalJSON(data []byte) error {
+	var obj struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		e.Message = obj.Message
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		e.Message = s
+		return nil
+	}
+
+	return fmt.Errorf("cannot unmarshal error field: %s", string(data))
+}
+
 func (m claudeMessage) text() string {
 	parts := make([]string, 0, len(m.Content))
 	for _, block := range m.Content {
