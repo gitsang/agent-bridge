@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gitsang/agent-bridge/internal/agent/claude"
 	"github.com/gitsang/agent-bridge/internal/agent/codex"
 	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
 )

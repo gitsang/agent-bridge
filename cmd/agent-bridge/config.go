@@ -30,6 +30,12 @@ type Config struct {
 			Timeout           time.Duration     `default:"30m" usage:"codex turn timeout, default 30m, 0 means no timeout" json:"timeout" yaml:"timeout"`
 			InitializeTimeout time.Duration     `default:"15s" usage:"codex app-server initialize timeout" json:"initialize_timeout" yaml:"initialize_timeout"`
 		} `json:"codex" yaml:"codex"`
+		Claude struct {
+			Command string            `default:"claude" usage:"claude code command" json:"command" yaml:"command"`
+			Args    []string          `default:"[--bare,-p,--output-format,stream-json,--verbose]" usage:"claude code command args before prompt" json:"args" yaml:"args"`
+			Env     map[string]string `usage:"claude code extra environment" json:"env" yaml:"env"`
+			Timeout time.Duration     `default:"30m" usage:"claude code turn timeout, default 30m, 0 means no timeout" json:"timeout" yaml:"timeout"`
+		} `json:"claude" yaml:"claude"`
 	} `json:"agent" yaml:"agent"`
 	ConversationStore struct {
 		Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
