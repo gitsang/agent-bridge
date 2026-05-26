@@ -668,6 +668,7 @@ type process struct {
 	cmd        *exec.Cmd
 	stdout     io.Reader
 	stderrDone <-chan struct{}
+	stderrBuf  *strings.Builder
 }
 
 func newProcess(ctx context.Context, request ProcessRequest) (Process, error) {
@@ -693,12 +694,13 @@ func newProcess(ctx context.Context, request ProcessRequest) (Process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	stderrBuf := &strings.Builder{}
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
-		_, _ = io.Copy(io.Discard, stderr)
+		_, _ = io.Copy(stderrBuf, stderr)
 	}()
-	return &process{cmd: cmd, stdout: stdout, stderrDone: stderrDone}, nil
+	return &process{cmd: cmd, stdout: stdout, stderrDone: stderrDone, stderrBuf: stderrBuf}, nil
 }
 
 func (p *process) Stdout() io.Reader { return p.stdout }
@@ -707,6 +709,9 @@ func (p *process) Wait() error {
 	err := p.cmd.Wait()
 	if p.stderrDone != nil {
 		<-p.stderrDone
+	}
+	if err != nil && p.stderrBuf != nil && p.stderrBuf.Len() > 0 {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(p.stderrBuf.String()))
 	}
 	return err
 }
