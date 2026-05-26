@@ -303,12 +303,8 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	state.Running = true
 	turnID := fmt.Sprintf("turn-%d", len(state.Turns)+1)
 	model := options.Model
-	if model.IsZero() {
-		if !state.Model.IsZero() {
-			model = state.Model
-		} else {
-			model = agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}
-		}
+	if model.IsZero() && !state.Model.IsZero() {
+		model = state.Model
 	}
 	turn := &turnState{ID: turnID, SessionID: resolvedSessionID, UserContent: content, Model: model}
 	state.Turns[turnID] = turn
@@ -404,6 +400,11 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 		Env:       copyStringMap(c.env),
 		Directory: directory,
 	}
+	c.logger.Debug("claude process starting",
+		slog.String("command", request.Command),
+		slog.Any("args", request.Args),
+		slog.String("directory", request.Directory),
+	)
 	process, err := c.factory(promptCtx, request)
 	if err != nil {
 		c.completeTurn(sessionID, turnID, err)
@@ -414,6 +415,10 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 	}
 	readErr := c.readStream(process.Stdout(), sessionID, turnID)
 	if readErr != nil && promptCtx.Err() == nil {
+		c.logger.Debug("claude stream read error",
+			slog.String("session_id", sessionID),
+			slog.Any("error", readErr),
+		)
 		_ = process.Kill()
 	}
 	waitErr := process.Wait()
@@ -434,6 +439,10 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 		return
 	}
 	if waitErr != nil {
+		c.logger.Debug("claude process exit error",
+			slog.String("session_id", sessionID),
+			slog.Any("error", waitErr),
+		)
 		c.completeTurn(sessionID, turnID, waitErr)
 		c.finishPrompt(sessionID, false)
 		finalErr = waitErr
@@ -447,10 +456,12 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 
 func (c *Client) buildArgs(sessionID, content string, model agent.ModelRef, firstPrompt bool) []string {
 	args := append([]string(nil), c.args...)
-	if firstPrompt {
-		args = append(args, "--session-id", sessionID)
-	} else {
-		args = append(args, "--resume", sessionID)
+	if strings.TrimSpace(sessionID) != "" {
+		if firstPrompt {
+			args = append(args, "--session-id", sessionID)
+		} else {
+			args = append(args, "--resume", sessionID)
+		}
 	}
 	if !model.IsZero() {
 		args = append(args, "--model", model.ModelID)
@@ -467,8 +478,17 @@ func (c *Client) readStream(stdout io.Reader, sessionID, turnID string) error {
 		if line == "" {
 			continue
 		}
+		c.logger.Debug("claude stream line",
+			slog.String("session_id", sessionID),
+			slog.String("line", line),
+		)
 		var event claudeEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			c.logger.Debug("claude stream parse error",
+				slog.String("session_id", sessionID),
+				slog.String("line", line),
+				slog.Any("error", err),
+			)
 			return err
 		}
 		if err := c.applyEvent(sessionID, turnID, event); err != nil {
