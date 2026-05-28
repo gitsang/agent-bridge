@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -514,7 +515,7 @@ func formatReply(message *bridge.Message) string {
 
 func formatCardReply(message *bridge.Message) (string, error) {
 	title := strings.TrimSpace(message.Agent.Title)
-	content := strings.TrimSpace(message.Content)
+	content := html.EscapeString(strings.TrimSpace(message.Content))
 	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
 	model := strings.TrimSpace(message.Agent.Model)
