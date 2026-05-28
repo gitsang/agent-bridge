@@ -18,22 +18,31 @@ plugins:
     ume:
       listen: ":24369"
       format: "text" # text | card
-  mattermost:
+  mattermost-webhook:
     mattermost-webhook:
       listen: ":24370"
       token: "mattermost-token"
       response_url_hosts:
         - "mattermost.example.com"
+  mattermost-ws:
+    mattermost-websocket:
+      server_url: "https://mattermost.example.com"
+      ws_url: "wss://mattermost.example.com"
+      access_token: "changeit"
 
+# Agent driver configuration
+# Supported drivers: opencode, codex, claude
+# Switch by changing the driver field below
 agent:
   driver: opencode
   message_output:
     include:
       - answer
-      - reasoning
-      - action
-      - artifact
-      - diagnostic
+      # - reasoning
+      # - action
+      # - artifact
+      # - diagnostic
+  # OpenCode driver configuration
   opencode:
     base_url: "http://127.0.0.1:4096"
     username: ""
@@ -48,6 +57,7 @@ agent:
     env: {}
     timeout: 30m
     initialize_timeout: 15s
+  # Claude driver configuration
   claude:
     command: "claude"
     args:
