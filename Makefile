@@ -24,12 +24,12 @@ GO_CMD_PATH ?= ./cmd/agent-bridge
 
 # build
 LD_FLAGS ?= -s -w
-LD_FLAGS += -X "main.Version=$(VERSION)"
-LD_FLAGS += -X "main.BuildDate=$(BUILD_DATE)"
-LD_FLAGS += -X "main.GitCommit=$(shell git rev-parse HEAD)"
-LD_FLAGS += -X "main.GoVersion=$(GO_VERSION)"
-LD_FLAGS += -X "main.GOOS=$(GO_OS)"
-LD_FLAGS += -X "main.GOARCH=$(GO_ARCH)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.Version=$(VERSION)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.BuildDate=$(BUILD_DATE)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.GitCommit=$(shell git rev-parse HEAD)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.GoVersion=$(GO_VERSION)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.GOOS=$(GO_OS)"
+LD_FLAGS += -X "$(GO_MODULE)/internal/version.GOARCH=$(GO_ARCH)"
 
 # container
 CONTAINER_CLI   ?= docker

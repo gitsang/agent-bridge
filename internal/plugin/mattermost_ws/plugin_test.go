@@ -6,7 +6,12 @@ import (
 	"github.com/gitsang/agent-bridge/internal/bridge"
 )
 
-func TestFormatReplyWithAgentContext(t *testing.T) {
+func TestBuildAttachmentWithAgentContext(t *testing.T) {
+	p := &Plugin{
+		version:     "v1.0.0",
+		agentDriver: "opencode",
+	}
+
 	msg := &bridge.Message{
 		Content: "hello",
 		Agent: bridge.AgentContext{
@@ -17,26 +22,79 @@ func TestFormatReplyWithAgentContext(t *testing.T) {
 		},
 	}
 
-	got := formatReply(msg)
-	for _, want := range []string{"hello", "Directory: /tmp/project", "Session: Session Title (session-1)", "Model: gpt-test"} {
-		if !contains(got, want) {
-			t.Errorf("formatReply() = %q, want to contain %q", got, want)
+	attachment := p.buildAttachment(msg)
+
+	if attachment.Title != "Session Title" {
+		t.Errorf("buildAttachment().Title = %q, want %q", attachment.Title, "Session Title")
+	}
+	if attachment.Text != "hello" {
+		t.Errorf("buildAttachment().Text = %q, want %q", attachment.Text, "hello")
+	}
+	if attachment.Footer != "agent-bridge v1.0.0 (opencode)" {
+		t.Errorf("buildAttachment().Footer = %q, want %q", attachment.Footer, "agent-bridge v1.0.0 (opencode)")
+	}
+
+	if len(attachment.Fields) != 3 {
+		t.Fatalf("buildAttachment().Fields length = %d, want 3", len(attachment.Fields))
+	}
+
+	expectedFields := []struct {
+		Title string
+		Value string
+		Short bool
+	}{
+		{Title: "Directory", Value: "/tmp/project", Short: true},
+		{Title: "Model", Value: "gpt-test", Short: true},
+		{Title: "Session", Value: "Session Title (session-1)", Short: false},
+	}
+
+	for i, expected := range expectedFields {
+		field := attachment.Fields[i]
+		if field.Title != expected.Title {
+			t.Errorf("buildAttachment().Fields[%d].Title = %q, want %q", i, field.Title, expected.Title)
+		}
+		if field.Value != expected.Value {
+			t.Errorf("buildAttachment().Fields[%d].Value = %q, want %q", i, field.Value, expected.Value)
+		}
+		if bool(field.Short) != expected.Short {
+			t.Errorf("buildAttachment().Fields[%d].Short = %v, want %v", i, field.Short, expected.Short)
 		}
 	}
 }
 
-func TestFormatReplyWithoutAgentContext(t *testing.T) {
+func TestBuildAttachmentWithoutAgentContext(t *testing.T) {
+	p := &Plugin{
+		version:     "dev",
+		agentDriver: "claude",
+	}
+
 	msg := &bridge.Message{
 		Content: "hello",
 	}
 
-	got := formatReply(msg)
-	if got != "hello" {
-		t.Errorf("formatReply() = %q, want %q", got, "hello")
+	attachment := p.buildAttachment(msg)
+
+	if attachment.Title != "" {
+		t.Errorf("buildAttachment().Title = %q, want empty", attachment.Title)
+	}
+	if attachment.Text != "hello" {
+		t.Errorf("buildAttachment().Text = %q, want %q", attachment.Text, "hello")
+	}
+	if attachment.Footer != "agent-bridge dev (claude)" {
+		t.Errorf("buildAttachment().Footer = %q, want %q", attachment.Footer, "agent-bridge dev (claude)")
+	}
+
+	if len(attachment.Fields) != 3 {
+		t.Fatalf("buildAttachment().Fields length = %d, want 3", len(attachment.Fields))
 	}
 }
 
-func TestFormatReplyWithPartialAgentContext(t *testing.T) {
+func TestBuildAttachmentWithPartialAgentContext(t *testing.T) {
+	p := &Plugin{
+		version:     "v2.0.0",
+		agentDriver: "codex",
+	}
+
 	msg := &bridge.Message{
 		Content: "hello",
 		Agent: bridge.AgentContext{
@@ -44,23 +102,23 @@ func TestFormatReplyWithPartialAgentContext(t *testing.T) {
 		},
 	}
 
-	got := formatReply(msg)
-	for _, want := range []string{"hello", "Model: gpt-test"} {
-		if !contains(got, want) {
-			t.Errorf("formatReply() = %q, want to contain %q", got, want)
-		}
-	}
-}
+	attachment := p.buildAttachment(msg)
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	if attachment.Title != "" {
+		t.Errorf("buildAttachment().Title = %q, want empty", attachment.Title)
 	}
-	return false
+	if attachment.Text != "hello" {
+		t.Errorf("buildAttachment().Text = %q, want %q", attachment.Text, "hello")
+	}
+	if attachment.Footer != "agent-bridge v2.0.0 (codex)" {
+		t.Errorf("buildAttachment().Footer = %q, want %q", attachment.Footer, "agent-bridge v2.0.0 (codex)")
+	}
+
+	if len(attachment.Fields) != 3 {
+		t.Fatalf("buildAttachment().Fields length = %d, want 3", len(attachment.Fields))
+	}
+
+	if attachment.Fields[1].Value != "gpt-test" {
+		t.Errorf("buildAttachment().Fields[1].Value = %q, want %q", attachment.Fields[1].Value, "gpt-test")
+	}
 }

@@ -5,17 +5,9 @@ import (
 	"log/slog"
 	"runtime"
 
+	"github.com/gitsang/agent-bridge/internal/version"
 	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
-)
-
-var (
-	Version   = "dev"
-	BuildDate = "1970-01-01T00:00:00Z"
-	GoVersion = ""
-	GOOS      = ""
-	GOARCH    = ""
-	GitCommit = ""
 )
 
 var versionCmd = &cobra.Command{
@@ -24,11 +16,11 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		{
 			tbl := table.New("Build", "")
-			tbl.AddRow("Version", Version)
-			tbl.AddRow("BuildDate", BuildDate)
-			tbl.AddRow("Go Version", GoVersion)
-			tbl.AddRow("OS/Arch", GOOS+"/"+GOARCH)
-			tbl.AddRow("Git Commit", GitCommit)
+			tbl.AddRow("Version", version.Version)
+			tbl.AddRow("BuildDate", version.BuildDate)
+			tbl.AddRow("Go Version", version.GoVersion)
+			tbl.AddRow("OS/Arch", version.GOOS+"/"+version.GOARCH)
+			tbl.AddRow("Git Commit", version.GitCommit)
 			tbl.Print()
 		}
 		fmt.Println()
@@ -43,10 +35,10 @@ var versionCmd = &cobra.Command{
 
 var versionLog = slog.Group("version",
 	slog.Group("build",
-		slog.String("version", Version),
-		slog.String("buildDate", BuildDate),
-		slog.String("go version", GoVersion),
-		slog.String("os/arch", GOOS+"/"+GOARCH),
+		slog.String("version", version.Version),
+		slog.String("buildDate", version.BuildDate),
+		slog.String("go version", version.GoVersion),
+		slog.String("os/arch", version.GOOS+"/"+version.GOARCH),
 	),
 	slog.Group("runtime",
 		slog.String("go version", runtime.Version()),

@@ -18,7 +18,9 @@ type Plugin interface {
 }
 
 type Infrastructure struct {
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	Version     string
+	AgentDriver string
 }
 
 type Construct func(name string, configRaw any, infra Infrastructure) (Plugin, error)

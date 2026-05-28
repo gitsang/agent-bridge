@@ -30,11 +30,13 @@ type Config struct {
 }
 
 type Plugin struct {
-	name       string
-	logger     *slog.Logger
-	cfg        Config
-	httpClient *http.Client
-	wsClient   *model.WebSocketClient
+	name        string
+	logger      *slog.Logger
+	cfg         Config
+	httpClient  *http.Client
+	wsClient    *model.WebSocketClient
+	version     string
+	agentDriver string
 }
 
 func init() {
@@ -61,7 +63,7 @@ func init() {
 			return nil, fmt.Errorf("mattermost-ws: logger is required")
 		}
 
-		return New(name, infra.Logger, cfg), nil
+		return New(name, infra.Logger, cfg, infra.Version, infra.AgentDriver), nil
 	}
 
 	coreplugin.Register(coreplugin.PluginFactory{
@@ -70,12 +72,14 @@ func init() {
 	})
 }
 
-func New(name string, logger *slog.Logger, cfg Config) *Plugin {
+func New(name string, logger *slog.Logger, cfg Config, version, agentDriver string) *Plugin {
 	return &Plugin{
-		name:       name,
-		logger:     logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
-		cfg:        cfg,
-		httpClient: &http.Client{Timeout: responseTimeout},
+		name:        name,
+		logger:      logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
+		cfg:         cfg,
+		httpClient:  &http.Client{Timeout: responseTimeout},
+		version:     version,
+		agentDriver: agentDriver,
 	}
 }
 
@@ -225,7 +229,7 @@ func (p *Plugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.Hand
 	}
 
 	reply := func(msg *bridge.Message) error {
-		return p.sendMessage(post.ChannelId, formatReply(msg))
+		return p.sendMessage(post.ChannelId, msg)
 	}
 
 	if err := handle(context.Background(), req, reply); err != nil {
@@ -233,7 +237,7 @@ func (p *Plugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.Hand
 			"error", err,
 			"channel_id", post.ChannelId,
 		)
-		p.sendMessage(post.ChannelId, "Error: "+err.Error())
+		p.sendError(post.ChannelId, err)
 	}
 }
 
@@ -282,18 +286,23 @@ func (p *Plugin) validatePostEvent(event *model.WebSocketEvent) (*model.Post, bo
 	return post, true
 }
 
-func (p *Plugin) sendMessage(channelID, content string) error {
-	reqBody := map[string]string{
-		"channel_id": channelID,
-		"message":    content,
+func (p *Plugin) sendMessage(channelID string, message *bridge.Message) error {
+	attachment := p.buildAttachment(message)
+
+	post := &model.Post{
+		ChannelId: channelID,
+		Props: map[string]any{
+			"attachments": []*model.SlackAttachment{attachment},
+		},
 	}
-	bodyBytes, err := json.Marshal(reqBody)
+
+	postBytes, err := json.Marshal(post)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("marshal post: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/api/v4/posts", p.cfg.ServerURL)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(postBytes))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -315,32 +324,78 @@ func (p *Plugin) sendMessage(channelID, content string) error {
 	return nil
 }
 
-func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
-	return nil, fmt.Errorf("mattermost-ws: proactive send not supported yet")
+func (p *Plugin) sendError(channelID string, err error) {
+	attachment := &model.SlackAttachment{
+		Fallback: "Error: " + err.Error(),
+		Color:    "#FF0000",
+		Text:     "Error: " + err.Error(),
+		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
+	}
+
+	post := &model.Post{
+		ChannelId: channelID,
+		Props: map[string]any{
+			"attachments": []*model.SlackAttachment{attachment},
+		},
+	}
+
+	postBytes, err := json.Marshal(post)
+	if err != nil {
+		p.logger.Error("marshal error post failed", "error", err)
+		return
+	}
+
+	url := fmt.Sprintf("%s/api/v4/posts", p.cfg.ServerURL)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(postBytes))
+	if err != nil {
+		p.logger.Error("create error request failed", "error", err)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.cfg.AccessToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		p.logger.Error("send error message failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		p.logger.Error("send error message failed",
+			"status_code", resp.StatusCode,
+			"response_body", string(body),
+		)
+	}
 }
 
-func formatReply(message *bridge.Message) string {
+func (p *Plugin) buildAttachment(message *bridge.Message) *model.SlackAttachment {
 	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
 	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
-	model := strings.TrimSpace(message.Agent.Model)
+	modelName := strings.TrimSpace(message.Agent.Model)
 
-	if directory == "" && sessionID == "" && model == "" && title == "" {
-		return content
+	fields := []*model.SlackAttachmentField{
+		{Short: true, Title: "Directory", Value: directory},
+		{Short: true, Title: "Model", Value: modelName},
+		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
 	}
 
-	builder := strings.Builder{}
-	builder.WriteString(content)
-	builder.WriteString("\n\n---\n\n")
-	builder.WriteString("Directory: ")
-	builder.WriteString(directory)
-	builder.WriteString("\nSession: ")
-	fmt.Fprintf(&builder, "%s (%s)", title, sessionID)
-	builder.WriteString("\nModel: ")
-	builder.WriteString(model)
+	return &model.SlackAttachment{
+		Fallback: content,
+		Color:    "#0066CC",
+		Title:    title,
+		Text:     content,
+		Fields:   fields,
+		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
+	}
+}
 
-	return builder.String()
+func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
+	return nil, fmt.Errorf("mattermost-ws: proactive send not supported yet")
 }
 
 func truncate(s string, n int) string {

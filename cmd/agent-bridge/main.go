@@ -21,6 +21,7 @@ import (
 	_ "github.com/gitsang/agent-bridge/internal/plugin/mattermost_ws"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/openai_compatible"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/ume"
+	"github.com/gitsang/agent-bridge/internal/version"
 	"github.com/gitsang/configer"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -102,7 +103,11 @@ func Run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("no enabled plugins configured")
 	}
 
-	pluginInfra := plugin.Infrastructure{Logger: logger}
+	pluginInfra := plugin.Infrastructure{
+		Logger:      logger,
+		Version:     version.String(),
+		AgentDriver: c.Agent.Driver,
+	}
 	group, groupCtx := errgroup.WithContext(runCtx)
 
 	instanceNames := make([]string, 0, len(c.Plugins))
