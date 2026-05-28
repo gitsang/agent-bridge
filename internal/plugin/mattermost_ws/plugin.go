@@ -225,7 +225,7 @@ func (p *Plugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.Hand
 	}
 
 	reply := func(msg *bridge.Message) error {
-		return p.sendMessage(post.ChannelId, msg.Content)
+		return p.sendMessage(post.ChannelId, formatReply(msg))
 	}
 
 	if err := handle(context.Background(), req, reply); err != nil {
@@ -317,6 +317,30 @@ func (p *Plugin) sendMessage(channelID, content string) error {
 
 func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
 	return nil, fmt.Errorf("mattermost-ws: proactive send not supported yet")
+}
+
+func formatReply(message *bridge.Message) string {
+	title := strings.TrimSpace(message.Agent.Title)
+	content := strings.TrimSpace(message.Content)
+	directory := strings.TrimSpace(message.Agent.Directory)
+	sessionID := strings.TrimSpace(message.Agent.SessionID)
+	model := strings.TrimSpace(message.Agent.Model)
+
+	if directory == "" && sessionID == "" && model == "" && title == "" {
+		return content
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString(content)
+	builder.WriteString("\n\n---\n\n")
+	builder.WriteString("Directory: ")
+	builder.WriteString(directory)
+	builder.WriteString("\nSession: ")
+	fmt.Fprintf(&builder, "%s (%s)", title, sessionID)
+	builder.WriteString("\nModel: ")
+	builder.WriteString(model)
+
+	return builder.String()
 }
 
 func truncate(s string, n int) string {
