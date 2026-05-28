@@ -57,9 +57,6 @@ func init() {
 		if strings.TrimSpace(cfg.AccessToken) == "" {
 			return nil, fmt.Errorf("mattermost-ws: access_token is required")
 		}
-		if strings.TrimSpace(cfg.BotUserID) == "" {
-			return nil, fmt.Errorf("mattermost-ws: bot_user_id is required")
-		}
 		if infra.Logger == nil {
 			return nil, fmt.Errorf("mattermost-ws: logger is required")
 		}
@@ -86,9 +83,49 @@ func (p *Plugin) Name() string {
 	return p.name
 }
 
+func (p *Plugin) fetchBotUserID() (string, error) {
+	url := fmt.Sprintf("%s/api/v4/users/me", p.cfg.ServerURL)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.cfg.AccessToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var user struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return "", err
+	}
+	if user.ID == "" {
+		return "", fmt.Errorf("empty user id in response")
+	}
+	return user.ID, nil
+}
+
 func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
 	if handle == nil {
 		return fmt.Errorf("mattermost-ws: handle is required")
+	}
+
+	if p.cfg.BotUserID == "" {
+		userID, err := p.fetchBotUserID()
+		if err != nil {
+			return fmt.Errorf("mattermost-ws: fetch bot user id: %w", err)
+		}
+		p.cfg.BotUserID = userID
+		p.logger.Info("fetched bot user id", "bot_user_id", userID)
 	}
 
 	p.logger.Info("starting mattermost websocket plugin",

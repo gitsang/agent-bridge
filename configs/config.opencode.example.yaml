@@ -24,12 +24,11 @@ plugins:
       token: "mattermost-token"
       response_url_hosts:
         - "mattermost.example.com"
-  # mattermost-ws:
-  #   mattermost-websocket:
-  #     server_url: "https://mattermost.example.com"
-  #     ws_url: "wss://mattermost.example.com"
-  #     access_token: "bot-access-token"
-  #     bot_user_id: "bot-user-id"
+  mattermost-ws:
+    mattermost-websocket:
+      server_url: "https://mattermost.example.com"
+      ws_url: "wss://mattermost.example.com"
+      access_token: "bot-access-token"
 
 agent:
   driver: opencode
