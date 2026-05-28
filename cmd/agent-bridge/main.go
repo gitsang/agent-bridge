@@ -18,6 +18,7 @@ import (
 	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 	"github.com/gitsang/agent-bridge/internal/plugin"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/mattermost"
+	_ "github.com/gitsang/agent-bridge/internal/plugin/mattermost_ws"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/openai_compatible"
 	_ "github.com/gitsang/agent-bridge/internal/plugin/ume"
 	"github.com/gitsang/configer"
