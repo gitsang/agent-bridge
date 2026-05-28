@@ -71,7 +71,7 @@ func init() {
 	}
 
 	coreplugin.Register(coreplugin.PluginFactory{
-		Name:      "mattermost",
+		Name:      "mattermost-webhook",
 		Construct: constructor,
 	})
 }
@@ -88,7 +88,7 @@ func New(name string, logger *slog.Logger, cfg Config) *Plugin {
 
 	return &Plugin{
 		name:       name,
-		logger:     logger.With("plugin_name", name, "plugin_type", "mattermost"),
+		logger:     logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
 		cfg:        cfg,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 

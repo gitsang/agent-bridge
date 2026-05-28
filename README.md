@@ -52,17 +52,18 @@ Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 等�
 ### Supports
 
 - [x] OpenAI-compatible Chat Completions API
-- [x] Mattermost
+- [x] Mattermost (Webhook)
+- [x] Mattermost (WebSocket)
 - [ ] Slack
 
-### Mattermost
+### Mattermost (Webhook)
 
 Mattermost can call agent-bridge through an outgoing webhook or slash command endpoint.
 
 ```yaml
 plugins:
   mattermost:
-    mattermost:
+    mattermost-webhook:
       listen: ":24370"
       token: "mattermost-token"
       response_url_hosts:
@@ -76,6 +77,23 @@ the chat session, then sends agent replies back as Mattermost JSON responses.
 When Mattermost provides `response_url`, replies are posted to that URL so
 multiple streaming replies can be delivered. Add the Mattermost `response_url`
 host to `response_url_hosts` so the plugin only calls approved callback hosts.
+
+### Mattermost (WebSocket)
+
+For environments where Mattermost cannot reach agent-bridge (e.g., internal network),
+use the WebSocket plugin. The bot connects outbound to Mattermost, so no inbound
+port is needed.
+
+```yaml
+plugins:
+  mattermost-ws:
+    mattermost-websocket:
+      server_url: "https://mattermost.example.com"
+      ws_url: "wss://mattermost.example.com"
+      access_token: "bot-access-token"
+```
+
+The plugin automatically fetches `bot_user_id` on startup via `/api/v4/users/me`.
 
 ## Slash commands:
 

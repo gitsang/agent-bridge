@@ -446,9 +446,9 @@ func TestDecodeRequestAcceptsJSON(t *testing.T) {
 }
 
 func TestFactoryRegistersMattermost(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost")
+	factory, ok := coreplugin.GetPluginFactory("mattermost-webhook")
 	if !ok {
-		t.Fatalf("mattermost factory is not registered")
+		t.Fatalf("mattermost-webhook factory is not registered")
 	}
 	plugin, err := factory.Construct("mattermost", map[string]any{"token": "secret"}, coreplugin.Infrastructure{Logger: testLogger()})
 	if err != nil {
@@ -460,9 +460,9 @@ func TestFactoryRegistersMattermost(t *testing.T) {
 }
 
 func TestFactoryRequiresToken(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost")
+	factory, ok := coreplugin.GetPluginFactory("mattermost-webhook")
 	if !ok {
-		t.Fatalf("mattermost factory is not registered")
+		t.Fatalf("mattermost-webhook factory is not registered")
 	}
 	_, err := factory.Construct("mattermost", map[string]any{}, coreplugin.Infrastructure{Logger: testLogger()})
 	if err == nil {

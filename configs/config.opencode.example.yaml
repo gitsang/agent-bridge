@@ -19,7 +19,7 @@ plugins:
       listen: ":24369"
       format: "text" # text | card
   mattermost:
-    mattermost:
+    mattermost-webhook:
       listen: ":24370"
       token: "mattermost-token"
       response_url_hosts:
