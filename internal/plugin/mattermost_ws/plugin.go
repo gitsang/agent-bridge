@@ -232,13 +232,15 @@ func (p *Plugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.Hand
 		return p.sendMessage(post.ChannelId, msg)
 	}
 
-	if err := handle(context.Background(), req, reply); err != nil {
-		p.logger.Error("handle message failed",
-			"error", err,
-			"channel_id", post.ChannelId,
-		)
-		p.sendError(post.ChannelId, err)
-	}
+	go func() {
+		if err := handle(context.Background(), req, reply); err != nil {
+			p.logger.Error("handle message failed",
+				"error", err,
+				"channel_id", post.ChannelId,
+			)
+			p.sendError(post.ChannelId, err)
+		}
+	}()
 }
 
 func (p *Plugin) validatePostEvent(event *model.WebSocketEvent) (*model.Post, bool) {

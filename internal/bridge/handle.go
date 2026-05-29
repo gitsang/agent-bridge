@@ -216,6 +216,9 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			return NewError(http.StatusBadGateway, "created session id is required")
 		}
 		resolvedSessionID = strings.TrimSpace(createdSession.ID)
+		if resolvedChatSessionID != "" {
+			c.conversationStore.PutBinding(resolvedChatSessionID, resolvedSessionID)
+		}
 	}
 
 	var afterCompletedAt float64
