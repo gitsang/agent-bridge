@@ -132,6 +132,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 			Content: message,
 			Chat: bridge.ChatContext{
 				SessionID: strings.TrimSpace(req.User),
+				UserID:    strings.TrimSpace(req.User),
 			},
 		}
 

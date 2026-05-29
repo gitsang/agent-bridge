@@ -246,6 +246,23 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		optfs = append(optfs, agent.PromptWithModel(resolvedModelRef))
 	}
 
+	// Prepend user identity to prompt if available
+	userID := strings.TrimSpace(req.Chat.UserID)
+	userName := strings.TrimSpace(req.Chat.UserName)
+	if userID != "" || userName != "" {
+		identity := userID
+		if userName != "" {
+			if identity != "" {
+				identity = fmt.Sprintf("%s(%s)", userName, identity)
+			} else {
+				identity = userName
+			}
+		}
+		if identity != "" {
+			content = fmt.Sprintf("%s 说：%s", identity, content)
+		}
+	}
+
 	handle, err := c.agentClient.Prompt(ctx, resolvedSessionID, content, optfs...)
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())

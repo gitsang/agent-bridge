@@ -290,6 +290,8 @@ func (p *webhookPlugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handle
 			Content: content,
 			Chat: bridge.ChatContext{
 				SessionID: request.SessionID(),
+				UserID:    strings.TrimSpace(request.UserID),
+				UserName:  strings.TrimSpace(request.UserName),
 			},
 		}
 		if p.markDuplicate(connectReq.Chat.SessionID, request.PostID) {
@@ -741,6 +743,7 @@ func (p *websocketPlugin) handleEvent(event *model.WebSocketEvent, handle corepl
 		Content: post.Message,
 		Chat: bridge.ChatContext{
 			SessionID: sessionID,
+			UserID:    strings.TrimSpace(post.UserId),
 		},
 	}
 

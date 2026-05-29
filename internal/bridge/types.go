@@ -4,6 +4,8 @@ type ReplyFunc func(msg *Message) error
 
 type ChatContext struct {
 	SessionID string `json:"session_id,omitempty"`
+	UserID    string `json:"user_id,omitempty"`
+	UserName  string `json:"user_name,omitempty"`
 }
 
 type AgentContext struct {
