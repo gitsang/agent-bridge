@@ -37,10 +37,15 @@ type Config struct {
 			Timeout time.Duration     `default:"30m" usage:"claude code turn timeout, default 30m, 0 means no timeout" json:"timeout" yaml:"timeout"`
 		} `json:"claude" yaml:"claude"`
 	} `json:"agent" yaml:"agent"`
-	ConversationStore struct {
-		Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
-		FilePath string        `default:"data/conversation_store.json" usage:"conversation store file path when type=file" json:"file_path" yaml:"file_path"`
-		TTL      time.Duration `default:"24h" usage:"conversation store ttl" json:"ttl" yaml:"ttl"`
-		MaxItems int           `default:"1024" usage:"conversation store max items" json:"max_items" yaml:"max_items"`
-	} `json:"conversation_store" yaml:"conversation_store"`
+	Conversation struct {
+		Store struct {
+			Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
+			FilePath string        `default:"data/conversation_store.json" usage:"conversation store file path when type=file" json:"file_path" yaml:"file_path"`
+			TTL      time.Duration `default:"24h" usage:"conversation store ttl" json:"ttl" yaml:"ttl"`
+			MaxItems int           `default:"1024" usage:"conversation store max items" json:"max_items" yaml:"max_items"`
+		} `json:"store" yaml:"store"`
+		Message struct {
+			IncludeUserIdentity bool `default:"false" usage:"include user identity in prompt" json:"include_user_identity" yaml:"include_user_identity"`
+		} `json:"message" yaml:"message"`
+	} `json:"conversation" yaml:"conversation"`
 }

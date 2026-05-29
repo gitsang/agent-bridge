@@ -21,7 +21,7 @@ plugins:
   # Unified Mattermost plugin - choose mode: webhook or websocket
   mattermost:
     mattermost:
-      mode: "websocket"  # webhook | websocket
+      mode: "websocket" # webhook | websocket
       webhook:
         listen: ":24370"
         token: "mattermost-token"
@@ -71,8 +71,11 @@ agent:
     env: {}
     timeout: 30m
 
-conversation_store:
-  type: "memory" # memory | file
-  file_path: "data/conversation_store.json"
-  ttl: 24h
-  max_items: 1024
+conversation:
+  store:
+    type: "memory" # memory | file
+    file_path: "/tmp/agent-bridge/conversation.json"
+    ttl: 24h
+    max_items: 1024
+  message:
+    include_user_identity: false

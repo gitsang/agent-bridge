@@ -92,6 +92,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 		bridge.WithAgentClient(agentClient),
 		bridge.WithMessageOutputOptions(c.Agent.MessageOutput),
 		bridge.WithConversationStore(conversationStore),
+		bridge.WithIncludeUserIdentity(c.Conversation.Message.IncludeUserIdentity),
 	)
 
 	// Run
@@ -168,14 +169,14 @@ func Run(cmd *cobra.Command, _ []string) error {
 }
 
 func buildConversationStore(c Config) (conversation_store.ConversationStore, error) {
-	storeType := strings.ToLower(strings.TrimSpace(c.ConversationStore.Type))
+	storeType := strings.ToLower(strings.TrimSpace(c.Conversation.Store.Type))
 	switch storeType {
 	case "", "memory":
-		return conversation_store.NewMemoryConversationStore(c.ConversationStore.TTL, c.ConversationStore.MaxItems), nil
+		return conversation_store.NewMemoryConversationStore(c.Conversation.Store.TTL, c.Conversation.Store.MaxItems), nil
 	case "file":
-		return conversation_store.NewFileConversationStore(c.ConversationStore.FilePath, c.ConversationStore.TTL, c.ConversationStore.MaxItems)
+		return conversation_store.NewFileConversationStore(c.Conversation.Store.FilePath, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
 	default:
-		return nil, fmt.Errorf("unsupported conversation store type %q", c.ConversationStore.Type)
+		return nil, fmt.Errorf("unsupported conversation store type %q", c.Conversation.Store.Type)
 	}
 }
 

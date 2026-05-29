@@ -14,6 +14,7 @@ type AgentBridge struct {
 	messageOutputOptions agent.MessageOutputOptions
 	conversationStore    conversation_store.ConversationStore
 	modelCache           *model_cache.Cache
+	includeUserIdentity  bool
 }
 
 func defaultAgentBridge() *AgentBridge {
@@ -49,6 +50,12 @@ func WithMessageOutputOptions(options agent.MessageOutputOptions) OptionFunc {
 func WithConversationStore(store conversation_store.ConversationStore) OptionFunc {
 	return func(target *AgentBridge) {
 		target.conversationStore = store
+	}
+}
+
+func WithIncludeUserIdentity(include bool) OptionFunc {
+	return func(target *AgentBridge) {
+		target.includeUserIdentity = include
 	}
 }
 
