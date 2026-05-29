@@ -19,8 +19,14 @@ import (
 )
 
 func TestHTTPHandlerHandlesSlashCommandSynchronously(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
 		if got, want := req.Content, "hello world"; got != want {
 			t.Fatalf("request content = %q, want %q", got, want)
 		}
@@ -58,8 +64,14 @@ func TestHTTPHandlerHandlesSlashCommandSynchronously(t *testing.T) {
 }
 
 func TestHTTPHandlerAcceptsSlashCommandAuthorizationHeader(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
 		if got, want := req.Content, "hello from header"; got != want {
 			t.Fatalf("request content = %q, want %q", got, want)
 		}
@@ -83,8 +95,14 @@ func TestHTTPHandlerAcceptsSlashCommandAuthorizationHeader(t *testing.T) {
 }
 
 func TestHTTPHandlerAcceptsSlashCommandGET(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(_ context.Context, req *bridge.Message, reply bridge.ReplyFunc) error {
 		if got, want := req.Content, "hello from get"; got != want {
 			t.Fatalf("request content = %q, want %q", got, want)
 		}
@@ -107,8 +125,14 @@ func TestHTTPHandlerAcceptsSlashCommandGET(t *testing.T) {
 }
 
 func TestHTTPHandlerRejectsSlashCommandGETQueryToken(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		t.Fatalf("handle should not be called")
 		return nil
 	})
@@ -148,8 +172,14 @@ func TestSameToken(t *testing.T) {
 }
 
 func TestHTTPHandlerRejectsInvalidToken(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		t.Fatalf("handle should not be called")
 		return nil
 	})
@@ -169,29 +199,24 @@ func TestHTTPHandlerRejectsInvalidToken(t *testing.T) {
 }
 
 func TestHTTPHandlerRejectsWhenTokenIsNotConfigured(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
-		t.Fatalf("handle should not be called")
-		return nil
-	})
-
-	form := url.Values{}
-	form.Set("token", "secret")
-	form.Set("text", "hello")
-	req := httptest.NewRequest(http.MethodPost, "/mattermost", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if got, want := rec.Code, http.StatusUnauthorized; got != want {
-		t.Fatalf("status = %d, want %d", got, want)
+	_, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err == nil {
+		t.Fatalf("New() error is nil")
 	}
 }
 
 func TestHTTPHandlerRejectsOversizedBody(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		t.Fatalf("handle should not be called")
 		return nil
 	})
@@ -211,8 +236,14 @@ func TestHTTPHandlerRejectsOversizedBody(t *testing.T) {
 }
 
 func TestHTTPHandlerHidesInternalSyncErrors(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		return errors.New("database password is secret")
 	})
 
@@ -238,8 +269,14 @@ func TestHTTPHandlerHidesInternalSyncErrors(t *testing.T) {
 }
 
 func TestHTTPHandlerShowsBadRequestBridgeErrors(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		return bridge.NewError(http.StatusBadRequest, "unknown slash command")
 	})
 
@@ -265,9 +302,15 @@ func TestHTTPHandlerShowsBadRequestBridgeErrors(t *testing.T) {
 }
 
 func TestHTTPHandlerIgnoresDuplicatePostID(t *testing.T) {
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
 	callCount := 0
-	handler := plugin.newHTTPHandler(func(_ context.Context, _ *bridge.Message, reply bridge.ReplyFunc) error {
+	handler := p.webhook.newHTTPHandler(func(_ context.Context, _ *bridge.Message, reply bridge.ReplyFunc) error {
 		callCount++
 		return reply(&bridge.Message{Content: "agent reply"})
 	})
@@ -312,9 +355,18 @@ func TestHTTPHandlerSendsRepliesToResponseURL(t *testing.T) {
 	}))
 	defer callback.Close()
 
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret", ResponseURLHosts: []string{mustURLHost(t, callback.URL)}})
-	plugin.httpClient = callback.Client()
-	handler := plugin.newHTTPHandler(func(_ context.Context, _ *bridge.Message, reply bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode: ModeWebhook,
+		Webhook: WebhookConfig{
+			Token:            "secret",
+			ResponseURLHosts: []string{mustURLHost(t, callback.URL)},
+		},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p.webhook.httpClient = callback.Client()
+	handler := p.webhook.newHTTPHandler(func(_ context.Context, _ *bridge.Message, reply bridge.ReplyFunc) error {
 		if err := reply(&bridge.Message{Content: "first"}); err != nil {
 			return err
 		}
@@ -359,8 +411,14 @@ func TestHTTPHandlerRejectsUnallowedResponseURL(t *testing.T) {
 	}))
 	defer callback.Close()
 
-	plugin := New("mattermost-test", testLogger(), Config{Token: "secret"})
-	handler := plugin.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
+	p, err := New("mattermost-test", testLogger(), Config{
+		Mode:    ModeWebhook,
+		Webhook: WebhookConfig{Token: "secret"},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	handler := p.webhook.newHTTPHandler(func(context.Context, *bridge.Message, bridge.ReplyFunc) error {
 		t.Fatalf("handle should not be called")
 		return nil
 	})
@@ -446,11 +504,16 @@ func TestDecodeRequestAcceptsJSON(t *testing.T) {
 }
 
 func TestFactoryRegistersMattermost(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost-webhook")
+	factory, ok := coreplugin.GetPluginFactory("mattermost")
 	if !ok {
-		t.Fatalf("mattermost-webhook factory is not registered")
+		t.Fatalf("mattermost factory is not registered")
 	}
-	plugin, err := factory.Construct("mattermost", map[string]any{"token": "secret"}, coreplugin.Infrastructure{Logger: testLogger()})
+	plugin, err := factory.Construct("mattermost", map[string]any{
+		"mode": "webhook",
+		"webhook": map[string]any{
+			"token": "secret",
+		},
+	}, coreplugin.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("Construct() error = %v", err)
 	}
@@ -459,10 +522,10 @@ func TestFactoryRegistersMattermost(t *testing.T) {
 	}
 }
 
-func TestFactoryRequiresToken(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost-webhook")
+func TestFactoryRequiresMode(t *testing.T) {
+	factory, ok := coreplugin.GetPluginFactory("mattermost")
 	if !ok {
-		t.Fatalf("mattermost-webhook factory is not registered")
+		t.Fatalf("mattermost factory is not registered")
 	}
 	_, err := factory.Construct("mattermost", map[string]any{}, coreplugin.Infrastructure{Logger: testLogger()})
 	if err == nil {

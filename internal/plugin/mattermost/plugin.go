@@ -18,6 +18,7 @@ import (
 
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
+	"github.com/mattermost/mattermost-server/v5/model"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,22 +28,58 @@ const (
 	postIDRetention     = 24 * time.Hour
 	maxRecentPostIDs    = 32
 	maxSessionStates    = 1024
+	reconnectInterval   = 3 * time.Second
 )
 
-type Config struct {
+const (
+	ModeWebhook   = "webhook"
+	ModeWebsocket = "websocket"
+)
+
+type WebhookConfig struct {
 	Listen           string   `yaml:"listen"`
 	Token            string   `yaml:"token"`
 	ResponseURLHosts []string `yaml:"response_url_hosts"`
 }
 
+type WebsocketConfig struct {
+	ServerURL   string `yaml:"server_url"`
+	WSURL       string `yaml:"ws_url"`
+	AccessToken string `yaml:"access_token"`
+	BotUserID   string `yaml:"bot_user_id"`
+}
+
+type Config struct {
+	Mode      string          `yaml:"mode"`
+	Webhook   WebhookConfig   `yaml:"webhook"`
+	Websocket WebsocketConfig `yaml:"websocket"`
+}
+
 type Plugin struct {
-	name       string
+	name   string
+	logger *slog.Logger
+	mode   string
+
+	webhook   *webhookPlugin
+	websocket *websocketPlugin
+}
+
+type webhookPlugin struct {
 	logger     *slog.Logger
-	cfg        Config
+	cfg        WebhookConfig
 	httpClient *http.Client
 
 	mu           sync.RWMutex
 	sessionState map[string]*chatSessionState
+}
+
+type websocketPlugin struct {
+	logger      *slog.Logger
+	cfg         WebsocketConfig
+	httpClient  *http.Client
+	wsClient    *model.WebSocketClient
+	version     string
+	agentDriver string
 }
 
 type chatSessionState struct {
@@ -52,7 +89,7 @@ type chatSessionState struct {
 
 func init() {
 	constructor := func(name string, configRaw any, infra coreplugin.Infrastructure) (coreplugin.Plugin, error) {
-		cfg := defaultConfig()
+		cfg := Config{}
 		configBytes, err := yaml.Marshal(configRaw)
 		if err != nil {
 			return nil, err
@@ -60,39 +97,76 @@ func init() {
 		if err := yaml.Unmarshal(configBytes, &cfg); err != nil {
 			return nil, err
 		}
-		if strings.TrimSpace(cfg.Token) == "" {
-			return nil, fmt.Errorf("mattermost token is required")
-		}
+
 		if infra.Logger == nil {
-			return nil, fmt.Errorf("mattermost infrastructure logger is required")
+			return nil, fmt.Errorf("mattermost: logger is required")
 		}
 
-		return New(name, infra.Logger, cfg), nil
+		return New(name, infra.Logger, cfg, infra)
 	}
 
 	coreplugin.Register(coreplugin.PluginFactory{
-		Name:      "mattermost-webhook",
+		Name:      "mattermost",
 		Construct: constructor,
 	})
 }
 
-func defaultConfig() Config {
-	return Config{Listen: ":8194"}
-}
-
-func New(name string, logger *slog.Logger, cfg Config) *Plugin {
-	defaultCfg := defaultConfig()
-	if strings.TrimSpace(cfg.Listen) == "" {
-		cfg.Listen = defaultCfg.Listen
+func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastructure) (*Plugin, error) {
+	mode := strings.TrimSpace(strings.ToLower(cfg.Mode))
+	if mode == "" {
+		return nil, fmt.Errorf("mattermost: mode is required (webhook or websocket)")
 	}
 
-	return &Plugin{
-		name:       name,
-		logger:     logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
-		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+	p := &Plugin{
+		name:   name,
+		logger: logger.With("plugin_name", name, "plugin_type", "mattermost", "mode", mode),
+		mode:   mode,
+	}
 
+	switch mode {
+	case ModeWebhook:
+		if strings.TrimSpace(cfg.Webhook.Token) == "" {
+			return nil, fmt.Errorf("mattermost: webhook token is required")
+		}
+		p.webhook = newWebhookPlugin(logger, name, cfg.Webhook)
+	case ModeWebsocket:
+		if strings.TrimSpace(cfg.Websocket.ServerURL) == "" {
+			return nil, fmt.Errorf("mattermost: websocket server_url is required")
+		}
+		if strings.TrimSpace(cfg.Websocket.WSURL) == "" {
+			return nil, fmt.Errorf("mattermost: websocket ws_url is required")
+		}
+		if strings.TrimSpace(cfg.Websocket.AccessToken) == "" {
+			return nil, fmt.Errorf("mattermost: websocket access_token is required")
+		}
+		p.websocket = newWebsocketPlugin(logger, name, cfg.Websocket, infra.Version, infra.AgentDriver)
+	default:
+		return nil, fmt.Errorf("mattermost: invalid mode %q, must be webhook or websocket", cfg.Mode)
+	}
+
+	return p, nil
+}
+
+func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig) *webhookPlugin {
+	if strings.TrimSpace(cfg.Listen) == "" {
+		cfg.Listen = ":8194"
+	}
+
+	return &webhookPlugin{
+		logger:       logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
+		cfg:          cfg,
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		sessionState: map[string]*chatSessionState{},
+	}
+}
+
+func newWebsocketPlugin(logger *slog.Logger, name string, cfg WebsocketConfig, version, agentDriver string) *websocketPlugin {
+	return &websocketPlugin{
+		logger:      logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
+		cfg:         cfg,
+		httpClient:  &http.Client{Timeout: responseTimeout},
+		version:     version,
+		agentDriver: agentDriver,
 	}
 }
 
@@ -101,6 +175,30 @@ func (p *Plugin) Name() string {
 }
 
 func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+	switch p.mode {
+	case ModeWebhook:
+		return p.webhook.Serve(ctx, handle)
+	case ModeWebsocket:
+		return p.websocket.Serve(ctx, handle)
+	default:
+		return fmt.Errorf("mattermost: invalid mode %q", p.mode)
+	}
+}
+
+func (p *Plugin) Send(ctx context.Context, msg *bridge.Message) (*bridge.Message, error) {
+	switch p.mode {
+	case ModeWebhook:
+		return p.webhook.Send(ctx, msg)
+	case ModeWebsocket:
+		return p.websocket.Send(ctx, msg)
+	default:
+		return nil, fmt.Errorf("mattermost: invalid mode %q", p.mode)
+	}
+}
+
+// webhookPlugin implementation
+
+func (p *webhookPlugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
 	if handle == nil {
 		return fmt.Errorf("mattermost handle is required")
 	}
@@ -130,11 +228,11 @@ func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error 
 	return fmt.Errorf("listen mattermost http server: %w", err)
 }
 
-func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
-	return nil, fmt.Errorf("mattermost plugin does not support proactive send")
+func (p *webhookPlugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
+	return nil, fmt.Errorf("mattermost webhook plugin does not support proactive send")
 }
 
-func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
+func (p *webhookPlugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -239,7 +337,7 @@ func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
 	return mux
 }
 
-func (p *Plugin) validateResponseURL(rawURL string) error {
+func (p *webhookPlugin) validateResponseURL(rawURL string) error {
 	endpoint, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return fmt.Errorf("invalid response_url")
@@ -260,7 +358,7 @@ func (p *Plugin) validateResponseURL(rawURL string) error {
 	return nil
 }
 
-func (p *Plugin) allowedResponseURLHosts() map[string]struct{} {
+func (p *webhookPlugin) allowedResponseURLHosts() map[string]struct{} {
 	allowed := map[string]struct{}{}
 	for _, host := range p.cfg.ResponseURLHosts {
 		host = strings.ToLower(strings.TrimSpace(host))
@@ -272,7 +370,7 @@ func (p *Plugin) allowedResponseURLHosts() map[string]struct{} {
 	return allowed
 }
 
-func (p *Plugin) checkToken(method string, token string, authorization string) error {
+func (p *webhookPlugin) checkToken(method string, token string, authorization string) error {
 	configuredToken := strings.TrimSpace(p.cfg.Token)
 	if configuredToken == "" {
 		return fmt.Errorf("token is not configured")
@@ -297,7 +395,7 @@ func sameToken(requestToken string, configuredToken string) bool {
 	return subtle.ConstantTimeCompare(requestSum[:], configuredSum[:]) == 1
 }
 
-func (p *Plugin) handleAsync(request MattermostRequest, connectReq *bridge.Message, handle coreplugin.HandleFunc) {
+func (p *webhookPlugin) handleAsync(request MattermostRequest, connectReq *bridge.Message, handle coreplugin.HandleFunc) {
 	replyLogger := p.logger.With(
 		"channel_id", strings.TrimSpace(request.ChannelID),
 		"user_id", strings.TrimSpace(request.UserID),
@@ -350,7 +448,7 @@ func responseError(err error) (int, string) {
 	return status, message
 }
 
-func (p *Plugin) sendResponse(ctx context.Context, responseURL string, message *bridge.Message) error {
+func (p *webhookPlugin) sendResponse(ctx context.Context, responseURL string, message *bridge.Message) error {
 	payload, err := buildResponse(message)
 	if err != nil {
 		return err
@@ -406,7 +504,7 @@ func (p *Plugin) sendResponse(ctx context.Context, responseURL string, message *
 	return nil
 }
 
-func (p *Plugin) markDuplicate(chatSessionID string, postID string) bool {
+func (p *webhookPlugin) markDuplicate(chatSessionID string, postID string) bool {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	resolvedPostID := strings.TrimSpace(postID)
 	if resolvedChatSessionID == "" || resolvedPostID == "" {
@@ -429,7 +527,7 @@ func (p *Plugin) markDuplicate(chatSessionID string, postID string) bool {
 	return false
 }
 
-func (p *Plugin) ensureSessionStateLocked(chatSessionID string, now time.Time) *chatSessionState {
+func (p *webhookPlugin) ensureSessionStateLocked(chatSessionID string, now time.Time) *chatSessionState {
 	state, ok := p.sessionState[chatSessionID]
 	if !ok {
 		p.limitSessionStatesLocked(now)
@@ -443,7 +541,7 @@ func (p *Plugin) ensureSessionStateLocked(chatSessionID string, now time.Time) *
 	return state
 }
 
-func (p *Plugin) cleanupExpiredSessionsLocked(now time.Time) {
+func (p *webhookPlugin) cleanupExpiredSessionsLocked(now time.Time) {
 	for chatSessionID, state := range p.sessionState {
 		if state == nil {
 			delete(p.sessionState, chatSessionID)
@@ -456,7 +554,7 @@ func (p *Plugin) cleanupExpiredSessionsLocked(now time.Time) {
 	}
 }
 
-func (p *Plugin) cleanupExpiredPostIDsLocked(state *chatSessionState, now time.Time) {
+func (p *webhookPlugin) cleanupExpiredPostIDsLocked(state *chatSessionState, now time.Time) {
 	for postID, seenAt := range state.recentPostIDs {
 		if now.Sub(seenAt) > postIDRetention {
 			delete(state.recentPostIDs, postID)
@@ -464,7 +562,7 @@ func (p *Plugin) cleanupExpiredPostIDsLocked(state *chatSessionState, now time.T
 	}
 }
 
-func (p *Plugin) limitRecentPostIDsLocked(state *chatSessionState) {
+func (p *webhookPlugin) limitRecentPostIDsLocked(state *chatSessionState) {
 	for len(state.recentPostIDs) > maxRecentPostIDs {
 		oldestPostID := ""
 		var oldestSeenAt time.Time
@@ -481,7 +579,7 @@ func (p *Plugin) limitRecentPostIDsLocked(state *chatSessionState) {
 	}
 }
 
-func (p *Plugin) limitSessionStatesLocked(now time.Time) {
+func (p *webhookPlugin) limitSessionStatesLocked(now time.Time) {
 	if len(p.sessionState) < maxSessionStates {
 		return
 	}
@@ -503,6 +601,323 @@ func (p *Plugin) limitSessionStatesLocked(now time.Time) {
 	}
 }
 
+// websocketPlugin implementation
+
+func (p *websocketPlugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+	if handle == nil {
+		return fmt.Errorf("mattermost-ws: handle is required")
+	}
+
+	if p.cfg.BotUserID == "" {
+		userID, err := p.fetchBotUserID()
+		if err != nil {
+			return fmt.Errorf("mattermost-ws: fetch bot user id: %w", err)
+		}
+		p.cfg.BotUserID = userID
+		p.logger.Info("fetched bot user id", "bot_user_id", userID)
+	}
+
+	p.logger.Info("starting mattermost websocket plugin",
+		"server_url", p.cfg.ServerURL,
+		"ws_url", p.cfg.WSURL,
+		"bot_user_id", p.cfg.BotUserID,
+	)
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("mattermost websocket plugin stopped")
+			return nil
+		default:
+		}
+
+		if err := p.connectAndListen(ctx, handle); err != nil {
+			p.logger.Error("websocket connection failed, reconnecting...",
+				"error", err,
+				"reconnect_in", reconnectInterval,
+			)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(reconnectInterval):
+		}
+	}
+}
+
+func (p *websocketPlugin) fetchBotUserID() (string, error) {
+	url := fmt.Sprintf("%s/api/v4/users/me", p.cfg.ServerURL)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.cfg.AccessToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var user struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return "", err
+	}
+	if user.ID == "" {
+		return "", fmt.Errorf("empty user id in response")
+	}
+	return user.ID, nil
+}
+
+func (p *websocketPlugin) connectAndListen(ctx context.Context, handle coreplugin.HandleFunc) error {
+	wsClient, err := model.NewWebSocketClient4(p.cfg.WSURL, p.cfg.AccessToken)
+	if err != nil {
+		return fmt.Errorf("create websocket client: %w", err)
+	}
+	p.wsClient = wsClient
+
+	defer func() {
+		wsClient.Close()
+		p.wsClient = nil
+	}()
+
+	wsClient.Listen()
+	p.logger.Info("websocket connected")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-wsClient.EventChannel:
+			if !ok {
+				return fmt.Errorf("websocket channel closed: %v", wsClient.ListenError)
+			}
+			p.handleEvent(event, handle)
+		}
+	}
+}
+
+func (p *websocketPlugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.HandleFunc) {
+	if event.EventType() != model.WEBSOCKET_EVENT_POSTED {
+		return
+	}
+
+	if event.EventType() == model.WEBSOCKET_EVENT_STATUS_CHANGE {
+		if event.GetBroadcast().UserId == p.cfg.BotUserID {
+			status, ok := event.GetData()["status"].(string)
+			if ok && status == "away" {
+				p.logger.Debug("bot status away, will reconnect")
+				return
+			}
+		}
+	}
+
+	post, valid := p.validatePostEvent(event)
+	if !valid {
+		return
+	}
+
+	p.logger.Info("received message",
+		"channel_id", post.ChannelId,
+		"user_id", post.UserId,
+		"message", truncate(post.Message, 100),
+	)
+
+	sessionID := fmt.Sprintf("%s:%s:%s",
+		event.GetData()["team_id"],
+		post.ChannelId,
+		post.UserId,
+	)
+
+	req := &bridge.Message{
+		Content: post.Message,
+		Chat: bridge.ChatContext{
+			SessionID: sessionID,
+		},
+	}
+
+	reply := func(msg *bridge.Message) error {
+		return p.sendMessage(post.ChannelId, msg)
+	}
+
+	go func() {
+		if err := handle(context.Background(), req, reply); err != nil {
+			p.logger.Error("handle message failed",
+				"error", err,
+				"channel_id", post.ChannelId,
+			)
+			p.sendError(post.ChannelId, err)
+		}
+	}()
+}
+
+func (p *websocketPlugin) validatePostEvent(event *model.WebSocketEvent) (*model.Post, bool) {
+	channelType, ok := event.GetData()["channel_type"].(string)
+	if !ok {
+		return nil, false
+	}
+
+	if channelType != model.CHANNEL_DIRECT {
+		mentionsStr, ok := event.GetData()["mentions"].(string)
+		if !ok {
+			return nil, false
+		}
+
+		var mentions []string
+		if err := json.Unmarshal([]byte(mentionsStr), &mentions); err != nil {
+			return nil, false
+		}
+
+		mentioned := false
+		for _, m := range mentions {
+			if m == p.cfg.BotUserID {
+				mentioned = true
+				break
+			}
+		}
+		if !mentioned {
+			return nil, false
+		}
+	}
+
+	postBytes, ok := event.GetData()["post"].(string)
+	if !ok {
+		return nil, false
+	}
+	post := model.PostFromJson(strings.NewReader(postBytes))
+	if post == nil {
+		return nil, false
+	}
+
+	if post.UserId == p.cfg.BotUserID {
+		return nil, false
+	}
+
+	return post, true
+}
+
+func (p *websocketPlugin) sendMessage(channelID string, message *bridge.Message) error {
+	attachment := p.buildAttachment(message)
+
+	post := &model.Post{
+		ChannelId: channelID,
+		Props: map[string]any{
+			"attachments": []*model.SlackAttachment{attachment},
+		},
+	}
+
+	postBytes, err := json.Marshal(post)
+	if err != nil {
+		return fmt.Errorf("marshal post: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v4/posts", p.cfg.ServerURL)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(postBytes))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.cfg.AccessToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("send message failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (p *websocketPlugin) sendError(channelID string, err error) {
+	attachment := &model.SlackAttachment{
+		Fallback: "Error: " + err.Error(),
+		Color:    "#FF0000",
+		Text:     "Error: " + err.Error(),
+		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
+	}
+
+	post := &model.Post{
+		ChannelId: channelID,
+		Props: map[string]any{
+			"attachments": []*model.SlackAttachment{attachment},
+		},
+	}
+
+	postBytes, err := json.Marshal(post)
+	if err != nil {
+		p.logger.Error("marshal error post failed", "error", err)
+		return
+	}
+
+	url := fmt.Sprintf("%s/api/v4/posts", p.cfg.ServerURL)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(postBytes))
+	if err != nil {
+		p.logger.Error("create error request failed", "error", err)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.cfg.AccessToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		p.logger.Error("send error message failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		p.logger.Error("send error message failed",
+			"status_code", resp.StatusCode,
+			"response_body", string(body),
+		)
+	}
+}
+
+func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackAttachment {
+	title := strings.TrimSpace(message.Agent.Title)
+	content := strings.TrimSpace(message.Content)
+	directory := strings.TrimSpace(message.Agent.Directory)
+	sessionID := strings.TrimSpace(message.Agent.SessionID)
+	modelName := strings.TrimSpace(message.Agent.Model)
+
+	fields := []*model.SlackAttachmentField{
+		{Short: true, Title: "Directory", Value: directory},
+		{Short: true, Title: "Model", Value: modelName},
+		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
+	}
+
+	return &model.SlackAttachment{
+		Fallback: content,
+		Color:    "#0066CC",
+		Title:    title,
+		Text:     content,
+		Fields:   fields,
+		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
+	}
+}
+
+func (p *websocketPlugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, error) {
+	return nil, fmt.Errorf("mattermost websocket plugin does not support proactive send yet")
+}
+
+// shared types and functions
+
 func buildResponse(message *bridge.Message) (MattermostResponse, error) {
 	if message == nil {
 		return MattermostResponse{}, fmt.Errorf("reply message is required")
@@ -519,9 +934,9 @@ func formatReply(message *bridge.Message) string {
 	content := strings.TrimSpace(message.Content)
 	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
-	model := strings.TrimSpace(message.Agent.Model)
+	modelName := strings.TrimSpace(message.Agent.Model)
 
-	if directory == "" && sessionID == "" && model == "" && title == "" {
+	if directory == "" && sessionID == "" && modelName == "" && title == "" {
 		return content
 	}
 
@@ -533,7 +948,7 @@ func formatReply(message *bridge.Message) string {
 	builder.WriteString("\nSession: ")
 	fmt.Fprintf(&builder, "%s (%s)", title, sessionID)
 	builder.WriteString("\nModel: ")
-	builder.WriteString(model)
+	builder.WriteString(modelName)
 
 	return builder.String()
 }
@@ -602,4 +1017,11 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
