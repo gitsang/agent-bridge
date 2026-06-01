@@ -977,7 +977,6 @@ func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackA
 		Fallback: content,
 		Color:    "#0066CC",
 		Pretext:  content,
-		Title:    title,
 		Text:     extraFields,
 		Fields:   fields,
 		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
