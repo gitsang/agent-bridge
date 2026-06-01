@@ -18,7 +18,6 @@ plugins:
     ume:
       listen: ":24369"
       format: "text" # text | card
-  # Unified Mattermost plugin - choose mode: webhook or websocket
   mattermost:
     mattermost:
       mode: "websocket" # webhook | websocket
@@ -60,11 +59,10 @@ agent:
     env: {}
     timeout: 30m
     initialize_timeout: 15s
-  # Claude driver configuration
   claude:
     command: "claude"
     args:
-      - "--bare"
+      # - "--bare"
       - "-p"
       - "--output-format"
       - "stream-json"
