@@ -11,9 +11,9 @@ import (
 	"syscall"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
-	"github.com/gitsang/agent-bridge/internal/agent/claude"
-	"github.com/gitsang/agent-bridge/internal/agent/codex"
-	"github.com/gitsang/agent-bridge/internal/agent/opencode"
+	_ "github.com/gitsang/agent-bridge/internal/agent/claude"
+	_ "github.com/gitsang/agent-bridge/internal/agent/codex"
+	_ "github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 	"github.com/gitsang/agent-bridge/internal/platform"
@@ -184,33 +184,49 @@ func buildConversationStore(c Config) (conversation_store.ConversationStore, err
 
 func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
 	driver := strings.ToLower(strings.TrimSpace(c.Agent.Driver))
+	if driver == "" {
+		driver = "opencode"
+	}
+
+	factory, ok := agent.GetAgentFactory(driver)
+	if !ok {
+		return nil, fmt.Errorf("unsupported agent driver %q", c.Agent.Driver)
+	}
+
+	infra := agent.Infrastructure{
+		Logger: logger,
+	}
+
+	var configRaw any
 	switch driver {
-	case "", "opencode":
-		return opencode.NewClient(
-			c.Agent.Opencode.BaseURL,
-			opencode.WithLogger(logger),
-			opencode.WithAuthentication(c.Agent.Opencode.Username, c.Agent.Opencode.Password),
-			opencode.WithTimeout(c.Agent.Opencode.Timeout),
-			opencode.WithDBPath(c.Agent.Opencode.DBPath),
-		), nil
+	case "opencode":
+		configRaw = map[string]any{
+			"base_url":  c.Agent.Opencode.BaseURL,
+			"username":  c.Agent.Opencode.Username,
+			"password":  c.Agent.Opencode.Password,
+			"timeout":   c.Agent.Opencode.Timeout.String(),
+			"db_path":   c.Agent.Opencode.DBPath,
+		}
 	case "codex":
-		return codex.NewClient(
-			codex.WithLogger(logger),
-			codex.WithCommand(c.Agent.Codex.Command, c.Agent.Codex.Args...),
-			codex.WithEnv(c.Agent.Codex.Env),
-			codex.WithTimeout(c.Agent.Codex.Timeout),
-			codex.WithInitializeTimeout(c.Agent.Codex.InitializeTimeout),
-		), nil
+		configRaw = map[string]any{
+			"command":            c.Agent.Codex.Command,
+			"args":               c.Agent.Codex.Args,
+			"env":                c.Agent.Codex.Env,
+			"timeout":            c.Agent.Codex.Timeout.String(),
+			"initialize_timeout": c.Agent.Codex.InitializeTimeout.String(),
+		}
 	case "claude", "claude-code":
-		return claude.NewClient(
-			claude.WithLogger(logger),
-			claude.WithCommand(c.Agent.Claude.Command, c.Agent.Claude.Args...),
-			claude.WithEnv(c.Agent.Claude.Env),
-			claude.WithTimeout(c.Agent.Claude.Timeout),
-		), nil
+		configRaw = map[string]any{
+			"command": c.Agent.Claude.Command,
+			"args":    c.Agent.Claude.Args,
+			"env":     c.Agent.Claude.Env,
+			"timeout": c.Agent.Claude.Timeout.String(),
+		}
 	default:
 		return nil, fmt.Errorf("unsupported agent driver %q", c.Agent.Driver)
 	}
+
+	return factory.Factory(driver, configRaw, infra)
 }
 
 func main() {
