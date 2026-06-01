@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	_ "github.com/mattn/go-sqlite3"
 	ocsdk "github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode-sdk-go/option"
 )
@@ -81,12 +83,14 @@ type Options struct {
 	Username string
 	Password string
 	Timeout  time.Duration
+	DBPath   string
 }
 
 type Client struct {
 	logger  *slog.Logger
 	client  *ocsdk.Client
 	timeout time.Duration
+	dbPath  string
 }
 
 func WithLogger(logger *slog.Logger) Option {
@@ -107,6 +111,12 @@ func WithTimeout(timeout time.Duration) Option {
 		if timeout >= 0 {
 			target.Timeout = timeout
 		}
+	}
+}
+
+func WithDBPath(dbPath string) Option {
+	return func(target *Options) {
+		target.DBPath = dbPath
 	}
 }
 
@@ -137,7 +147,7 @@ func NewClient(baseURL string, options ...Option) *Client {
 	}
 
 	sdkClient := ocsdk.NewClient(sdkOptions...)
-	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout}
+	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout, dbPath: resolved.DBPath}
 }
 
 func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Session, error) {
@@ -157,6 +167,38 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Se
 	sessions := make([]agent.Session, 0, len(*resp))
 	for _, s := range *resp {
 		sessions = append(sessions, toSession(s))
+	}
+	return sessions, nil
+}
+
+func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
+	if c.dbPath == "" {
+		return nil, fmt.Errorf("db_path not configured for opencode client")
+	}
+
+	db, err := sql.Open("sqlite3", c.dbPath+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open opencode db: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, title, directory
+		FROM session
+		ORDER BY time_updated DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []agent.Session
+	for rows.Next() {
+		var s agent.Session
+		if err := rows.Scan(&s.ID, &s.Title, &s.Directory); err != nil {
+			continue
+		}
+		sessions = append(sessions, s)
 	}
 	return sessions, nil
 }

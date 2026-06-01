@@ -572,7 +572,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		_, hasGlobal := invocation.Flags["global"]
 
 		if hasGlobal {
-			listing, err := c.listSessions(ctx, "")
+			listing, err := c.listAllSessions(ctx)
 			if err != nil {
 				return nil, NewError(http.StatusBadGateway, err.Error())
 			}
@@ -1091,6 +1091,59 @@ func formatQuestionRequest(index int, request agent.QuestionRequest) string {
 
 func (c *AgentBridge) listSessions(ctx context.Context, directory string) (string, error) {
 	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(directory))
+	if err != nil {
+		return "", err
+	}
+
+	if len(sessions) == 0 {
+		return "- (no sessions)", nil
+	}
+
+	byDirectory := map[string][]string{}
+	for _, currentSession := range sessions {
+		directory := strings.TrimSpace(currentSession.Directory)
+		if directory == "" {
+			directory = "."
+		}
+
+		title := strings.TrimSpace(currentSession.Title)
+		if title == "" {
+			title = "Untitled"
+		}
+
+		line := fmt.Sprintf("  - %s (%s)", title, currentSession.ID)
+		byDirectory[directory] = append(byDirectory[directory], line)
+	}
+
+	directories := make([]string, 0, len(byDirectory))
+	for directory := range byDirectory {
+		directories = append(directories, directory)
+	}
+	sort.Strings(directories)
+
+	builder := strings.Builder{}
+	for index, directory := range directories {
+		if index > 0 {
+			builder.WriteString("\n")
+		}
+
+		builder.WriteString("- ")
+		builder.WriteString(directory)
+		builder.WriteString("\n")
+
+		items := byDirectory[directory]
+		sort.Strings(items)
+		for _, item := range items {
+			builder.WriteString(item)
+			builder.WriteString("\n")
+		}
+	}
+
+	return strings.TrimSpace(builder.String()), nil
+}
+
+func (c *AgentBridge) listAllSessions(ctx context.Context) (string, error) {
+	sessions, err := c.agentClient.ListAllSessions(ctx)
 	if err != nil {
 		return "", err
 	}

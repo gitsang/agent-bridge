@@ -104,6 +104,10 @@ func (c *fakeClient) ListSessions(context.Context, string) ([]agent.Session, err
 	return nil, nil
 }
 
+func (c *fakeClient) ListAllSessions(context.Context) ([]agent.Session, error) {
+	return nil, nil
+}
+
 func (c *fakeClient) GetSession(context.Context, string) (*agent.Session, error) {
 	return nil, nil
 }

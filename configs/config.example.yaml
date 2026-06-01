@@ -50,6 +50,7 @@ agent:
     username: ""
     password: ""
     timeout: 10m
+    db_path: "~/.local/share/opencode/opencode.db"
   codex:
     command: "codex"
     args:

@@ -262,6 +262,10 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Se
 	return sessions, nil
 }
 
+func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
+	return c.ListSessions(ctx, "")
+}
+
 func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {

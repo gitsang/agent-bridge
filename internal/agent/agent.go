@@ -200,6 +200,7 @@ type Client interface {
 
 	// Session
 	ListSessions(ctx context.Context, directory string) ([]Session, error)
+	ListAllSessions(ctx context.Context) ([]Session, error)
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
 	CreateSession(ctx context.Context, request CreateSessionRequest) (*Session, error)
 

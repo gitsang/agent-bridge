@@ -191,6 +191,7 @@ func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
 			opencode.WithLogger(logger),
 			opencode.WithAuthentication(c.Agent.Opencode.Username, c.Agent.Opencode.Password),
 			opencode.WithTimeout(c.Agent.Opencode.Timeout),
+			opencode.WithDBPath(c.Agent.Opencode.DBPath),
 		), nil
 	case "codex":
 		return codex.NewClient(

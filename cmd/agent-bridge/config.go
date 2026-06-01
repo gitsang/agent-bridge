@@ -22,6 +22,7 @@ type Config struct {
 			Username string        `default:"agent" usage:"opencode agent server username" json:"username" yaml:"username"`
 			Password string        `usage:"opencode agent server password" json:"password" yaml:"password"`
 			Timeout  time.Duration `default:"10m" usage:"opencode agent request timeout, default 10m, 0 means no timeout" json:"timeout" yaml:"timeout"`
+			DBPath   string        `usage:"opencode sqlite database path for listing all sessions" json:"db_path" yaml:"db_path"`
 		} `json:"opencode" yaml:"opencode"`
 		Codex struct {
 			Command           string            `default:"codex" usage:"codex app-server command" json:"command" yaml:"command"`
