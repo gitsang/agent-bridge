@@ -20,4 +20,9 @@ type Message struct {
 	Content string       `json:"content"`
 	Chat    ChatContext  `json:"chat,omitzero"`
 	Agent   AgentContext `json:"agent,omitzero"`
+
+	Reasoning   string `json:"reasoning,omitempty"`
+	Tools       string `json:"tools,omitempty"`
+	Patches     string `json:"patches,omitempty"`
+	Diagnostics string `json:"diagnostics,omitempty"`
 }

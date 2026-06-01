@@ -60,6 +60,11 @@ type Message struct {
 
 	Agent string
 	Model ModelRef
+
+	Reasoning   string
+	Tools       string
+	Patches     string
+	Diagnostics string
 }
 
 type MessageContentKind string

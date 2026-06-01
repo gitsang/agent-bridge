@@ -358,7 +358,18 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 				continue
 			}
 			if latest == nil || turn.CompletedAt > latest.CompletedAt {
-				latest = &agent.Message{ID: turn.ID, SessionID: turn.SessionID, Role: "assistant", Content: strings.TrimSpace(turn.Answer.String()), CompletedAt: turn.CompletedAt, Model: turn.Model}
+				latest = &agent.Message{
+					ID:          turn.ID,
+					SessionID:   turn.SessionID,
+					Role:        "assistant",
+					Content:     strings.TrimSpace(turn.Answer.String()),
+					Reasoning:   strings.TrimSpace(turn.Reasoning.String()),
+					Tools:       strings.TrimSpace(turn.Action.String()),
+					Patches:     strings.TrimSpace(turn.Artifact.String()),
+					Diagnostics: strings.TrimSpace(turn.Diagnostic.String()),
+					CompletedAt: turn.CompletedAt,
+					Model:       turn.Model,
+				}
 			}
 		}
 	}
@@ -491,11 +502,22 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 
 	messages := make([]*agent.Message, 0, len(turns))
 	for _, turn := range turns {
-		content := turn.render(output)
-		if strings.TrimSpace(content) == "" {
+		content := turn.extractContent(output)
+		if content.Answer == "" && content.Reasoning == "" && content.Tools == "" && content.Patches == "" && content.Diagnostics == "" {
 			continue
 		}
-		messages = append(messages, &agent.Message{ID: turn.ID, SessionID: turn.SessionID, Role: "assistant", Content: content, CompletedAt: turn.CompletedAt, Model: turn.Model})
+		messages = append(messages, &agent.Message{
+			ID:          turn.ID,
+			SessionID:   turn.SessionID,
+			Role:        "assistant",
+			Content:     content.Answer,
+			Reasoning:   content.Reasoning,
+			Tools:       content.Tools,
+			Patches:     content.Patches,
+			Diagnostics: content.Diagnostics,
+			CompletedAt: turn.CompletedAt,
+			Model:       turn.Model,
+		})
 	}
 	return messages, nil
 }
@@ -970,6 +992,34 @@ func (t *turnState) render(output agent.MessageOutputOptions) string {
 		builder.WriteString("\n" + strings.TrimSpace(t.Answer.String()))
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func (t *turnState) extractContent(output agent.MessageOutputOptions) extractedContent {
+	var result extractedContent
+	if output.Includes(agent.MessageContentAnswer) && t.Answer.Len() > 0 {
+		result.Answer = strings.TrimSpace(t.Answer.String())
+	}
+	if output.Includes(agent.MessageContentReasoning) && t.Reasoning.Len() > 0 {
+		result.Reasoning = strings.TrimSpace(t.Reasoning.String())
+	}
+	if output.Includes(agent.MessageContentActionTool) && t.Action.Len() > 0 {
+		result.Tools = strings.TrimSpace(t.Action.String())
+	}
+	if output.Includes(agent.MessageContentArtifactPatch) && t.Artifact.Len() > 0 {
+		result.Patches = strings.TrimSpace(t.Artifact.String())
+	}
+	if output.Includes(agent.MessageContentDiagnostic) && t.Diagnostic.Len() > 0 {
+		result.Diagnostics = strings.TrimSpace(t.Diagnostic.String())
+	}
+	return result
+}
+
+type extractedContent struct {
+	Answer      string
+	Reasoning   string
+	Tools       string
+	Patches     string
+	Diagnostics string
 }
 
 // JSON-RPC connection

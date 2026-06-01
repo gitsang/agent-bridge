@@ -83,8 +83,12 @@ func (c *AgentBridge) buildReplyMessage(ctx context.Context, req *Message, resol
 	}
 
 	return &Message{
-		Content: strings.TrimSpace(result.Content),
-		Chat:    req.Chat,
+		Content:     strings.TrimSpace(result.Content),
+		Reasoning:   strings.TrimSpace(result.Reasoning),
+		Tools:       strings.TrimSpace(result.Tools),
+		Patches:     strings.TrimSpace(result.Patches),
+		Diagnostics: strings.TrimSpace(result.Diagnostics),
+		Chat:        req.Chat,
 		Agent: AgentContext{
 			SessionID: sessionID,
 			Title:     resolvedTitle,

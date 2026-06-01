@@ -665,9 +665,14 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 		resultSessionID = strings.TrimSpace(fallbackSessionID)
 	}
 
+	content := extractContent(response.Parts, output)
 	result := &agent.Message{
-		Content:   extractReply(response.Parts, output),
-		SessionID: resultSessionID,
+		Content:     content.Answer,
+		Reasoning:   content.Reasoning,
+		Tools:       content.Tools,
+		Patches:     content.Patches,
+		Diagnostics: content.Diagnostics,
+		SessionID:   resultSessionID,
 		Model: agent.ModelRef{
 			ProviderID: strings.TrimSpace(assistant.ProviderID),
 			ModelID:    strings.TrimSpace(assistant.ModelID),
@@ -804,8 +809,16 @@ func isNotFound(err error) bool {
 	return apiErr.StatusCode == http.StatusNotFound
 }
 
-func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string {
-	builder := strings.Builder{}
+type extractedContent struct {
+	Answer      string
+	Reasoning   string
+	Tools       string
+	Patches     string
+	Diagnostics string
+}
+
+func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extractedContent {
+	var result extractedContent
 
 	for _, part := range parts {
 		switch part.Type {
@@ -817,7 +830,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 			if text == "" {
 				break
 			}
-			builder.WriteString("\n" + text)
+			result.Answer += "\n" + text
 		case ocsdk.PartTypeReasoning:
 			if !output.Includes(agent.MessageContentReasoning) {
 				break
@@ -826,7 +839,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 			if text == "" {
 				break
 			}
-			fmt.Fprintf(&builder, "\n<thinking>\n%s\n</thinking>", text)
+			result.Reasoning += "\n" + text
 		case ocsdk.PartTypeFile:
 			if !output.Includes(agent.MessageContentArtifactFile) {
 				break
@@ -835,7 +848,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 			if filename == "" {
 				break
 			}
-			fmt.Fprintf(&builder, "\n<file name=%s />", filename)
+			result.Patches += fmt.Sprintf("\n<file name=%s />", filename)
 		case ocsdk.PartTypeTool:
 			if !output.Includes(agent.MessageContentActionTool) {
 				break
@@ -846,16 +859,16 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 				if tool == "" {
 					break
 				}
-				fmt.Fprintf(&builder, "\n<tool name=%s />", tool)
+				result.Tools += fmt.Sprintf("\n<tool name=%s />", tool)
 				break
 			}
 
 			if b, err := json.Marshal(state.Input); err == nil {
 				inputStr := string(b)
-				fmt.Fprintf(&builder, "\n<tool name=\"%s\" type=\"input\">\n%s\n</tool>", part.Tool, inputStr)
+				result.Tools += fmt.Sprintf("\n<tool name=\"%s\" type=\"input\">\n%s\n</tool>", part.Tool, inputStr)
 			}
 			outputStr := strings.TrimSpace(state.Output)
-			fmt.Fprintf(&builder, "\n<tool name=\"%s\" type=\"output\">\n%s\n</tool>", part.Tool, outputStr)
+			result.Tools += fmt.Sprintf("\n<tool name=\"%s\" type=\"output\">\n%s\n</tool>", part.Tool, outputStr)
 		case ocsdk.PartTypeStepStart:
 		case ocsdk.PartTypeStepFinish:
 		case ocsdk.PartTypeSnapshot:
@@ -866,7 +879,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 			if text == "" {
 				break
 			}
-			fmt.Fprintf(&builder, "\n<snapshot>%s</snapshot>", text)
+			result.Patches += fmt.Sprintf("\n<snapshot>%s</snapshot>", text)
 		case ocsdk.PartTypePatch:
 			if !output.Includes(agent.MessageContentArtifactPatch) {
 				break
@@ -876,7 +889,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 				if text == "" {
 					break
 				}
-				fmt.Fprintf(&builder, "\n<patch>%s</patch>", text)
+				result.Patches += fmt.Sprintf("\n<patch>%s</patch>", text)
 			}
 		case ocsdk.PartTypeAgent:
 			if !output.Includes(agent.MessageContentActionAgent) {
@@ -886,7 +899,7 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 			if name == "" {
 				break
 			}
-			fmt.Fprintf(&builder, "\n<agent name=\"%s\" />", name)
+			result.Tools += fmt.Sprintf("\n<agent name=\"%s\" />", name)
 		case ocsdk.PartTypeRetry:
 			if !output.Includes(agent.MessageContentDiagnostic) {
 				break
@@ -896,10 +909,21 @@ func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string 
 				if text == "" {
 					break
 				}
-				fmt.Fprintf(&builder, "\n<retry>%s</retry>", text)
+				result.Diagnostics += fmt.Sprintf("\n<retry>%s</retry>", text)
 			}
 		}
 	}
 
-	return strings.TrimSpace(builder.String())
+	result.Answer = strings.TrimSpace(result.Answer)
+	result.Reasoning = strings.TrimSpace(result.Reasoning)
+	result.Tools = strings.TrimSpace(result.Tools)
+	result.Patches = strings.TrimSpace(result.Patches)
+	result.Diagnostics = strings.TrimSpace(result.Diagnostics)
+
+	return result
+}
+
+func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string {
+	content := extractContent(parts, output)
+	return content.Answer
 }

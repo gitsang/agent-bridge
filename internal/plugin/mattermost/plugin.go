@@ -896,6 +896,25 @@ func (p *websocketPlugin) sendError(channelID string, err error) {
 	}
 }
 
+func formatExtraFields(message *bridge.Message) string {
+	var parts []string
+
+	if reasoning := strings.TrimSpace(message.Reasoning); reasoning != "" {
+		parts = append(parts, fmt.Sprintf("<reasoning>\n%s\n</reasoning>", reasoning))
+	}
+	if tools := strings.TrimSpace(message.Tools); tools != "" {
+		parts = append(parts, fmt.Sprintf("<tools>\n%s\n</tools>", tools))
+	}
+	if patches := strings.TrimSpace(message.Patches); patches != "" {
+		parts = append(parts, fmt.Sprintf("<patches>\n%s\n</patches>", patches))
+	}
+	if diagnostics := strings.TrimSpace(message.Diagnostics); diagnostics != "" {
+		parts = append(parts, fmt.Sprintf("<diagnostics>\n%s\n</diagnostics>", diagnostics))
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
 func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackAttachment {
 	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
@@ -909,11 +928,14 @@ func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackA
 		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
 	}
 
+	extraFields := formatExtraFields(message)
+
 	return &model.SlackAttachment{
 		Fallback: content,
 		Color:    "#0066CC",
 		Pretext:  content,
 		Title:    title,
+		Text:     extraFields,
 		Fields:   fields,
 		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
 	}
@@ -946,11 +968,14 @@ func buildResponse(message *bridge.Message, version, agentDriver string) (Matter
 		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
 	}
 
+	extraFields := formatExtraFields(message)
+
 	attachment := &model.SlackAttachment{
 		Fallback: content,
 		Color:    "#0066CC",
 		Pretext:  content,
 		Title:    title,
+		Text:     extraFields,
 		Fields:   fields,
 		Footer:   fmt.Sprintf("agent-bridge %s (%s)", version, agentDriver),
 	}

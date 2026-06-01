@@ -460,56 +460,59 @@ func TestExtractReplyFiltersByMessageOutputOptions(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		output      agent.MessageOutputOptions
-		wantContain []string
-		wantSkip    []string
+		name           string
+		output         agent.MessageOutputOptions
+		wantAnswer     string
+		wantReasoning  string
+		wantTools      string
+		wantPatches    string
+		wantDiagnostic string
 	}{
 		{
-			name:        "empty include outputs all mapped parts",
-			output:      agent.MessageOutputOptions{},
-			wantContain: []string{"final answer", "<thinking>", "<tool", "<patch>main.go</patch>", "<snapshot>state</snapshot>"},
+			name:       "empty include outputs answer only",
+			output:     agent.MessageOutputOptions{},
+			wantAnswer: "final answer",
 		},
 		{
-			name: "answer only",
-			output: agent.MessageOutputOptions{
-				Include: []agent.MessageContentKind{agent.MessageContentAnswer},
-			},
-			wantContain: []string{"final answer"},
-			wantSkip:    []string{"<thinking>", "<tool", "<patch>", "<snapshot>"},
+			name:       "answer only",
+			output:     agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentAnswer}},
+			wantAnswer: "final answer",
 		},
 		{
-			name: "parent categories include children",
-			output: agent.MessageOutputOptions{
-				Include: []agent.MessageContentKind{agent.MessageContentAction, agent.MessageContentArtifact},
-			},
-			wantContain: []string{"<tool", "<patch>main.go</patch>", "<snapshot>state</snapshot>"},
-			wantSkip:    []string{"final answer", "<thinking>"},
+			name:          "reasoning only",
+			output:        agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentReasoning}},
+			wantReasoning: "private chain",
 		},
 		{
-			name: "unmatched category outputs nothing",
-			output: agent.MessageOutputOptions{
-				Include: []agent.MessageContentKind{agent.MessageContentDiagnostic},
-			},
-			wantSkip: []string{"final answer", "<thinking>", "<tool", "<patch>", "<snapshot>"},
+			name:        "action and artifact",
+			output:      agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentAction, agent.MessageContentArtifact}},
+			wantTools:   "<tool",
+			wantPatches: "<patch>main.go</patch>",
+		},
+		{
+			name:       "unmatched category outputs nothing",
+			output:     agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentDiagnostic}},
+			wantAnswer: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractReply(parts, tt.output)
-			for _, want := range tt.wantContain {
-				if !strings.Contains(got, want) {
-					t.Fatalf("extractReply() = %q, want to contain %q", got, want)
-				}
+			content := extractContent(parts, tt.output)
+			if tt.wantAnswer != "" && !strings.Contains(content.Answer, tt.wantAnswer) {
+				t.Errorf("Answer = %q, want to contain %q", content.Answer, tt.wantAnswer)
 			}
-			for _, skip := range tt.wantSkip {
-				if strings.Contains(got, skip) {
-					t.Fatalf("extractReply() = %q, want to skip %q", got, skip)
-				}
+			if tt.wantReasoning != "" && !strings.Contains(content.Reasoning, tt.wantReasoning) {
+				t.Errorf("Reasoning = %q, want to contain %q", content.Reasoning, tt.wantReasoning)
 			}
-			if len(tt.wantContain) == 0 && got != "" {
-				t.Fatalf("extractReply() = %q, want empty string", got)
+			if tt.wantTools != "" && !strings.Contains(content.Tools, tt.wantTools) {
+				t.Errorf("Tools = %q, want to contain %q", content.Tools, tt.wantTools)
+			}
+			if tt.wantPatches != "" && !strings.Contains(content.Patches, tt.wantPatches) {
+				t.Errorf("Patches = %q, want to contain %q", content.Patches, tt.wantPatches)
+			}
+			if tt.wantAnswer == "" && content.Answer != "" {
+				t.Errorf("Answer = %q, want empty", content.Answer)
 			}
 		})
 	}
