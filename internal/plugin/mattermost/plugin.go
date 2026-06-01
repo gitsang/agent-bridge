@@ -65,9 +65,11 @@ type Plugin struct {
 }
 
 type webhookPlugin struct {
-	logger     *slog.Logger
-	cfg        WebhookConfig
-	httpClient *http.Client
+	logger       *slog.Logger
+	cfg          WebhookConfig
+	httpClient   *http.Client
+	version      string
+	agentDriver  string
 
 	mu           sync.RWMutex
 	sessionState map[string]*chatSessionState
@@ -128,7 +130,7 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 		if strings.TrimSpace(cfg.Webhook.Token) == "" {
 			return nil, fmt.Errorf("mattermost: webhook token is required")
 		}
-		p.webhook = newWebhookPlugin(logger, name, cfg.Webhook)
+		p.webhook = newWebhookPlugin(logger, name, cfg.Webhook, infra.Version, infra.AgentDriver)
 	case ModeWebsocket:
 		if strings.TrimSpace(cfg.Websocket.ServerURL) == "" {
 			return nil, fmt.Errorf("mattermost: websocket server_url is required")
@@ -147,7 +149,7 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 	return p, nil
 }
 
-func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig) *webhookPlugin {
+func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig, version, agentDriver string) *webhookPlugin {
 	if strings.TrimSpace(cfg.Listen) == "" {
 		cfg.Listen = ":8194"
 	}
@@ -156,6 +158,8 @@ func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig) *webh
 		logger:       logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
 		cfg:          cfg,
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
+		version:      version,
+		agentDriver:  agentDriver,
 		sessionState: map[string]*chatSessionState{},
 	}
 }
@@ -327,7 +331,7 @@ func (p *webhookPlugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handle
 			return
 		}
 
-		resp, err := buildResponse(last)
+		resp, err := buildResponse(last, p.version, p.agentDriver)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
 			writeJSON(w, http.StatusInternalServerError, MattermostResponse{ResponseType: "ephemeral", Text: "Error: internal error"})
@@ -451,7 +455,7 @@ func responseError(err error) (int, string) {
 }
 
 func (p *webhookPlugin) sendResponse(ctx context.Context, responseURL string, message *bridge.Message) error {
-	payload, err := buildResponse(message)
+	payload, err := buildResponse(message, p.version, p.agentDriver)
 	if err != nil {
 		return err
 	}
@@ -464,7 +468,7 @@ func (p *webhookPlugin) sendResponse(ctx context.Context, responseURL string, me
 	startedAt := time.Now()
 	var sendErr error
 	var statusCode int
-	logger := p.logger.With("body_length", len(payload.Text))
+	logger := p.logger.With("has_attachments", len(payload.Attachments) > 0)
 	defer func() {
 		logger.Debug("mattermost reply sent",
 			"duration_ms", time.Since(startedAt).Milliseconds(),
@@ -908,8 +912,8 @@ func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackA
 	return &model.SlackAttachment{
 		Fallback: content,
 		Color:    "#0066CC",
+		Pretext:  content,
 		Title:    title,
-		Text:     content,
 		Fields:   fields,
 		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
 	}
@@ -921,39 +925,40 @@ func (p *websocketPlugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Me
 
 // shared types and functions
 
-func buildResponse(message *bridge.Message) (MattermostResponse, error) {
+func buildResponse(message *bridge.Message, version, agentDriver string) (MattermostResponse, error) {
 	if message == nil {
 		return MattermostResponse{}, fmt.Errorf("reply message is required")
 	}
-	text := formatReply(message)
-	if strings.TrimSpace(text) == "" {
-		return MattermostResponse{}, fmt.Errorf("reply text is required")
-	}
-	return MattermostResponse{ResponseType: "ephemeral", Text: text}, nil
-}
 
-func formatReply(message *bridge.Message) string {
 	title := strings.TrimSpace(message.Agent.Title)
 	content := strings.TrimSpace(message.Content)
 	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
 	modelName := strings.TrimSpace(message.Agent.Model)
 
-	if directory == "" && sessionID == "" && modelName == "" && title == "" {
-		return content
+	if content == "" {
+		return MattermostResponse{}, fmt.Errorf("reply text is required")
 	}
 
-	builder := strings.Builder{}
-	builder.WriteString(content)
-	builder.WriteString("\n\n---\n\n")
-	builder.WriteString("Directory: ")
-	builder.WriteString(directory)
-	builder.WriteString("\nSession: ")
-	fmt.Fprintf(&builder, "%s (%s)", title, sessionID)
-	builder.WriteString("\nModel: ")
-	builder.WriteString(modelName)
+	fields := []*model.SlackAttachmentField{
+		{Short: true, Title: "Directory", Value: directory},
+		{Short: true, Title: "Model", Value: modelName},
+		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
+	}
 
-	return builder.String()
+	attachment := &model.SlackAttachment{
+		Fallback: content,
+		Color:    "#0066CC",
+		Pretext:  content,
+		Title:    title,
+		Fields:   fields,
+		Footer:   fmt.Sprintf("agent-bridge %s (%s)", version, agentDriver),
+	}
+
+	return MattermostResponse{
+		ResponseType: "ephemeral",
+		Attachments:  []*model.SlackAttachment{attachment},
+	}, nil
 }
 
 func decodeRequest(r *http.Request) (MattermostRequest, error) {
@@ -1012,8 +1017,9 @@ func (r MattermostRequest) SessionID() string {
 }
 
 type MattermostResponse struct {
-	ResponseType string `json:"response_type"`
-	Text         string `json:"text"`
+	ResponseType string                   `json:"response_type"`
+	Text         string                   `json:"text,omitempty"`
+	Attachments  []*model.SlackAttachment `json:"attachments,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {

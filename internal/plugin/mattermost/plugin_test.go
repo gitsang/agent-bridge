@@ -58,8 +58,11 @@ func TestHTTPHandlerHandlesSlashCommandSynchronously(t *testing.T) {
 	if got, want := resp.ResponseType, "ephemeral"; got != want {
 		t.Fatalf("response_type = %q, want %q", got, want)
 	}
-	if got, want := resp.Text, "agent reply"; got != want {
-		t.Fatalf("text = %q, want %q", got, want)
+	if len(resp.Attachments) == 0 {
+		t.Fatal("expected at least one attachment")
+	}
+	if got, want := resp.Attachments[0].Pretext, "agent reply"; got != want {
+		t.Fatalf("pretext = %q, want %q", got, want)
 	}
 }
 
@@ -396,11 +399,17 @@ func TestHTTPHandlerSendsRepliesToResponseURL(t *testing.T) {
 		t.Fatalf("immediate text = %q, want %q", got, want)
 	}
 	callbackBodies := collectCallbackBodies(t, callbackCh, 2)
-	if got, want := callbackBodies[0].Text, "first"; got != want {
-		t.Fatalf("first callback text = %q, want %q", got, want)
+	if len(callbackBodies[0].Attachments) == 0 {
+		t.Fatal("first callback: expected at least one attachment")
 	}
-	if got, want := callbackBodies[1].Text, "second"; got != want {
-		t.Fatalf("second callback text = %q, want %q", got, want)
+	if got, want := callbackBodies[0].Attachments[0].Pretext, "first"; got != want {
+		t.Fatalf("first callback pretext = %q, want %q", got, want)
+	}
+	if len(callbackBodies[1].Attachments) == 0 {
+		t.Fatal("second callback: expected at least one attachment")
+	}
+	if got, want := callbackBodies[1].Attachments[0].Pretext, "second"; got != want {
+		t.Fatalf("second callback pretext = %q, want %q", got, want)
 	}
 }
 
@@ -472,17 +481,22 @@ func TestBuildResponseFormatsReply(t *testing.T) {
 		},
 	}
 
-	resp, err := buildResponse(msg)
+	resp, err := buildResponse(msg, "test-version", "test-driver")
 	if err != nil {
 		t.Fatalf("buildResponse() error = %v", err)
 	}
 	if got, want := resp.ResponseType, "ephemeral"; got != want {
 		t.Fatalf("ResponseType = %q, want %q", got, want)
 	}
-	for _, want := range []string{"hello", "Directory: /tmp/project", "Session: Session Title (session-1)", "Model: gpt-test"} {
-		if !strings.Contains(resp.Text, want) {
-			t.Fatalf("Text = %q, want %q", resp.Text, want)
-		}
+	if len(resp.Attachments) == 0 {
+		t.Fatal("expected at least one attachment")
+	}
+	attachment := resp.Attachments[0]
+	if got, want := attachment.Pretext, "hello"; got != want {
+		t.Fatalf("Pretext = %q, want %q", got, want)
+	}
+	if got, want := attachment.Title, "Session Title"; got != want {
+		t.Fatalf("Title = %q, want %q", got, want)
 	}
 }
 
