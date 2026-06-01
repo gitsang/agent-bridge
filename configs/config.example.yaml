@@ -22,6 +22,7 @@ plugins:
   mattermost:
     mattermost:
       mode: "websocket" # webhook | websocket
+      command_prefix: "/" # command prefix, default "/"
       webhook:
         listen: ":24370"
         token: "mattermost-token"
@@ -73,8 +74,9 @@ agent:
 
 conversation:
   store:
-    type: "memory" # memory | file
+    type: "memory" # memory | file | sqlite
     file_path: "/tmp/agent-bridge/conversation.json"
+    db_path: "/tmp/agent-bridge/conversation.db"
     ttl: 24h
     max_items: 1024
   message:
