@@ -75,8 +75,7 @@ agent:
 conversation:
   store:
     type: "memory" # memory | file | sqlite
-    file_path: "/tmp/agent-bridge/conversation.json"
-    db_path: "/tmp/agent-bridge/conversation.db"
+    path: "/tmp/agent-bridge/conversation.db"
     ttl: 24h
     max_items: 1024
   message:
