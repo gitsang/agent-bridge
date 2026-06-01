@@ -14,6 +14,7 @@ node_modules/
 .docusaurus
 
 # dist files
+data
 dist
 .dist
 .builds
