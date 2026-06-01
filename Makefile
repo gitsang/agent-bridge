@@ -116,13 +116,13 @@ vet:
 .PHONY: test
 ## run unit tests
 test:
-	CGO_ENABLED=0 $(GO) test -race ./...
+	CGO_ENABLED=1 $(GO) test -race ./...
 
 
 .PHONY: run
 ## run via go run
 run:
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) \
+	CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) \
 		$(GO) run \
 		-trimpath \
 		-ldflags "$(LD_FLAGS)" \
@@ -148,7 +148,7 @@ $(DIST_BIN):
 .PHONY: build-binary
 ## build binary
 build-binary: $(DIST_BIN)
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) \
+	CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) \
 		$(GO) build \
 		-trimpath \
 		-ldflags "$(LD_FLAGS)" \
