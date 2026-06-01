@@ -12,7 +12,3 @@ services:
     command:
       - -c
       - /app/configs/config.yaml
-
-networks:
-  agent:
-    driver: bridge
