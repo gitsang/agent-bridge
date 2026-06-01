@@ -175,6 +175,8 @@ func buildConversationStore(c Config) (conversation_store.ConversationStore, err
 		return conversation_store.NewMemoryConversationStore(c.Conversation.Store.TTL, c.Conversation.Store.MaxItems), nil
 	case "file":
 		return conversation_store.NewFileConversationStore(c.Conversation.Store.FilePath, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
+	case "sqlite":
+		return conversation_store.NewSQLiteConversationStore(c.Conversation.Store.DBPath, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
 	default:
 		return nil, fmt.Errorf("unsupported conversation store type %q", c.Conversation.Store.Type)
 	}

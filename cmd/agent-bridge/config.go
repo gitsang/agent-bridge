@@ -39,8 +39,9 @@ type Config struct {
 	} `json:"agent" yaml:"agent"`
 	Conversation struct {
 		Store struct {
-			Type     string        `default:"memory" usage:"conversation store type: memory|file" json:"type" yaml:"type"`
+			Type     string        `default:"memory" usage:"conversation store type: memory|file|sqlite" json:"type" yaml:"type"`
 			FilePath string        `default:"data/conversation_store.json" usage:"conversation store file path when type=file" json:"file_path" yaml:"file_path"`
+			DBPath   string        `default:"data/conversation_store.db" usage:"conversation store db path when type=sqlite" json:"db_path" yaml:"db_path"`
 			TTL      time.Duration `default:"24h" usage:"conversation store ttl" json:"ttl" yaml:"ttl"`
 			MaxItems int           `default:"1024" usage:"conversation store max items" json:"max_items" yaml:"max_items"`
 		} `json:"store" yaml:"store"`

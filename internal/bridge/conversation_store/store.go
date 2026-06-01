@@ -32,4 +32,5 @@ type ConversationStore interface {
 	Delete(chatSessionID string)
 	Touch(chatSessionID string)
 	List() []ConversationState
+	ListActive(since time.Time) []ConversationState
 }

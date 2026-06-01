@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
 )
 
 type ParsedInput struct {
@@ -569,6 +570,21 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			},
 		}, nil
 	case "list":
+		_, hasGlobal := invocation.Flags["global"]
+		_, hasActive := invocation.Flags["active"]
+
+		if hasGlobal {
+			var states []conversation_store.ConversationState
+			if hasActive {
+				since := time.Now().Add(-24 * time.Hour)
+				states = c.conversationStore.ListActive(since)
+			} else {
+				states = c.conversationStore.List()
+			}
+			listing := formatConversationStates(states)
+			return &Message{Content: listing, Chat: req.Chat}, nil
+		}
+
 		directory := strings.TrimSpace(invocation.Flags["directory"])
 		if directory == "" {
 			directory = c.resolveDirectoryForList(req)
@@ -1130,6 +1146,42 @@ func (c *AgentBridge) listSessions(ctx context.Context, directory string) (strin
 	}
 
 	return strings.TrimSpace(builder.String()), nil
+}
+
+func formatConversationStates(states []conversation_store.ConversationState) string {
+	if len(states) == 0 {
+		return "- (no sessions)"
+	}
+
+	builder := strings.Builder{}
+	for i, state := range states {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+
+		chatSessionID := strings.TrimSpace(state.ChatSessionID)
+		agentSessionID := strings.TrimSpace(state.AgentSessionID)
+		directory := strings.TrimSpace(state.DefaultDirectory)
+		lastSeen := state.LastSeenAt.Format("2006-01-02 15:04:05")
+
+		if directory == "" {
+			directory = "."
+		}
+
+		builder.WriteString("- ")
+		builder.WriteString(chatSessionID)
+		if agentSessionID != "" {
+			builder.WriteString(" -> ")
+			builder.WriteString(agentSessionID)
+		}
+		builder.WriteString(" [")
+		builder.WriteString(directory)
+		builder.WriteString("] (")
+		builder.WriteString(lastSeen)
+		builder.WriteString(")")
+	}
+
+	return strings.TrimSpace(builder.String())
 }
 
 func (c *AgentBridge) listModels(ctx context.Context, directory string) (string, error) {

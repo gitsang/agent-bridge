@@ -50,38 +50,42 @@ type WebsocketConfig struct {
 }
 
 type Config struct {
-	Mode      string          `yaml:"mode"`
-	Webhook   WebhookConfig   `yaml:"webhook"`
-	Websocket WebsocketConfig `yaml:"websocket"`
+	Mode          string          `yaml:"mode"`
+	CommandPrefix string          `yaml:"command_prefix"`
+	Webhook       WebhookConfig   `yaml:"webhook"`
+	Websocket     WebsocketConfig `yaml:"websocket"`
 }
 
 type Plugin struct {
-	name   string
-	logger *slog.Logger
-	mode   string
+	name          string
+	logger        *slog.Logger
+	mode          string
+	commandPrefix string
 
 	webhook   *webhookPlugin
 	websocket *websocketPlugin
 }
 
 type webhookPlugin struct {
-	logger       *slog.Logger
-	cfg          WebhookConfig
-	httpClient   *http.Client
-	version      string
-	agentDriver  string
+	logger        *slog.Logger
+	cfg           WebhookConfig
+	httpClient    *http.Client
+	version       string
+	agentDriver   string
+	commandPrefix string
 
 	mu           sync.RWMutex
 	sessionState map[string]*chatSessionState
 }
 
 type websocketPlugin struct {
-	logger      *slog.Logger
-	cfg         WebsocketConfig
-	httpClient  *http.Client
-	wsClient    *model.WebSocketClient
-	version     string
-	agentDriver string
+	logger        *slog.Logger
+	cfg           WebsocketConfig
+	httpClient    *http.Client
+	wsClient      *model.WebSocketClient
+	version       string
+	agentDriver   string
+	commandPrefix string
 }
 
 type chatSessionState struct {
@@ -119,10 +123,16 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 		return nil, fmt.Errorf("mattermost: mode is required (webhook or websocket)")
 	}
 
+	commandPrefix := strings.TrimSpace(cfg.CommandPrefix)
+	if commandPrefix == "" {
+		commandPrefix = "/"
+	}
+
 	p := &Plugin{
-		name:   name,
-		logger: logger.With("plugin_name", name, "plugin_type", "mattermost", "mode", mode),
-		mode:   mode,
+		name:          name,
+		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost", "mode", mode),
+		mode:          mode,
+		commandPrefix: commandPrefix,
 	}
 
 	switch mode {
@@ -130,7 +140,7 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 		if strings.TrimSpace(cfg.Webhook.Token) == "" {
 			return nil, fmt.Errorf("mattermost: webhook token is required")
 		}
-		p.webhook = newWebhookPlugin(logger, name, cfg.Webhook, infra.Version, infra.AgentDriver)
+		p.webhook = newWebhookPlugin(logger, name, cfg.Webhook, infra.Version, infra.AgentDriver, commandPrefix)
 	case ModeWebsocket:
 		if strings.TrimSpace(cfg.Websocket.ServerURL) == "" {
 			return nil, fmt.Errorf("mattermost: websocket server_url is required")
@@ -141,7 +151,7 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 		if strings.TrimSpace(cfg.Websocket.AccessToken) == "" {
 			return nil, fmt.Errorf("mattermost: websocket access_token is required")
 		}
-		p.websocket = newWebsocketPlugin(logger, name, cfg.Websocket, infra.Version, infra.AgentDriver)
+		p.websocket = newWebsocketPlugin(logger, name, cfg.Websocket, infra.Version, infra.AgentDriver, commandPrefix)
 	default:
 		return nil, fmt.Errorf("mattermost: invalid mode %q, must be webhook or websocket", cfg.Mode)
 	}
@@ -149,28 +159,30 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 	return p, nil
 }
 
-func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig, version, agentDriver string) *webhookPlugin {
+func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig, version, agentDriver, commandPrefix string) *webhookPlugin {
 	if strings.TrimSpace(cfg.Listen) == "" {
 		cfg.Listen = ":8194"
 	}
 
 	return &webhookPlugin{
-		logger:       logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
-		cfg:          cfg,
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
-		version:      version,
-		agentDriver:  agentDriver,
-		sessionState: map[string]*chatSessionState{},
+		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
+		cfg:           cfg,
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		version:       version,
+		agentDriver:   agentDriver,
+		commandPrefix: commandPrefix,
+		sessionState:  map[string]*chatSessionState{},
 	}
 }
 
-func newWebsocketPlugin(logger *slog.Logger, name string, cfg WebsocketConfig, version, agentDriver string) *websocketPlugin {
+func newWebsocketPlugin(logger *slog.Logger, name string, cfg WebsocketConfig, version, agentDriver, commandPrefix string) *websocketPlugin {
 	return &websocketPlugin{
-		logger:      logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
-		cfg:         cfg,
-		httpClient:  &http.Client{Timeout: responseTimeout},
-		version:     version,
-		agentDriver: agentDriver,
+		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
+		cfg:           cfg,
+		httpClient:    &http.Client{Timeout: responseTimeout},
+		version:       version,
+		agentDriver:   agentDriver,
+		commandPrefix: commandPrefix,
 	}
 }
 
@@ -198,6 +210,32 @@ func (p *Plugin) Send(ctx context.Context, msg *bridge.Message) (*bridge.Message
 	default:
 		return nil, fmt.Errorf("mattermost: invalid mode %q", p.mode)
 	}
+}
+
+func (p *webhookPlugin) transformContent(content string) string {
+	if p.commandPrefix == "/" {
+		return content
+	}
+
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, p.commandPrefix) {
+		return "/" + strings.TrimPrefix(trimmed, p.commandPrefix)
+	}
+
+	return content
+}
+
+func (p *websocketPlugin) transformContent(content string) string {
+	if p.commandPrefix == "/" {
+		return content
+	}
+
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, p.commandPrefix) {
+		return "/" + strings.TrimPrefix(trimmed, p.commandPrefix)
+	}
+
+	return content
 }
 
 // webhookPlugin implementation
@@ -283,7 +321,7 @@ func (p *webhookPlugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handle
 			return
 		}
 
-		content := strings.TrimSpace(request.Text)
+		content := p.transformContent(strings.TrimSpace(request.Text))
 		if content == "" {
 			statusCode = http.StatusBadRequest
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "text is required"})
@@ -744,7 +782,7 @@ func (p *websocketPlugin) handleEvent(event *model.WebSocketEvent, handle corepl
 	)
 
 	req := &bridge.Message{
-		Content: post.Message,
+		Content: p.transformContent(post.Message),
 		Chat: bridge.ChatContext{
 			SessionID: sessionID,
 			UserID:    strings.TrimSpace(post.UserId),

@@ -212,6 +212,26 @@ func (s *FileConversationStore) List() []ConversationState {
 	return items
 }
 
+func (s *FileConversationStore) ListActive(since time.Time) []ConversationState {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
+
+	items := make([]ConversationState, 0, len(s.conversations))
+	for _, state := range s.conversations {
+		if state.LastSeenAt.After(since) || state.LastSeenAt.Equal(since) {
+			items = append(items, state)
+		}
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].LastSeenAt.After(items[j].LastSeenAt)
+	})
+
+	return items
+}
+
 func (s *FileConversationStore) ensureStateLocked(chatSessionID string, now time.Time) ConversationState {
 	state, ok := s.conversations[chatSessionID]
 	if !ok {
