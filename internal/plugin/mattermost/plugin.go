@@ -922,10 +922,15 @@ func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackA
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
 	modelName := strings.TrimSpace(message.Agent.Model)
 
-	fields := []*model.SlackAttachmentField{
-		{Short: true, Title: "Directory", Value: directory},
-		{Short: true, Title: "Model", Value: modelName},
-		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
+	var fields []*model.SlackAttachmentField
+	if directory != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: true, Title: "Directory", Value: directory})
+	}
+	if modelName != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: true, Title: "Model", Value: modelName})
+	}
+	if title != "" || sessionID != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)})
 	}
 
 	extraFields := formatExtraFields(message)
@@ -962,10 +967,15 @@ func buildResponse(message *bridge.Message, version, agentDriver string) (Matter
 		return MattermostResponse{}, fmt.Errorf("reply text is required")
 	}
 
-	fields := []*model.SlackAttachmentField{
-		{Short: true, Title: "Directory", Value: directory},
-		{Short: true, Title: "Model", Value: modelName},
-		{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)},
+	var fields []*model.SlackAttachmentField
+	if directory != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: true, Title: "Directory", Value: directory})
+	}
+	if modelName != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: true, Title: "Model", Value: modelName})
+	}
+	if title != "" || sessionID != "" {
+		fields = append(fields, &model.SlackAttachmentField{Short: false, Title: "Session", Value: fmt.Sprintf("%s (%s)", title, sessionID)})
 	}
 
 	extraFields := formatExtraFields(message)
