@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -977,6 +978,7 @@ func (p *websocketPlugin) buildAttachment(message *bridge.Message) *model.SlackA
 		Fallback: content,
 		Color:    "#0066CC",
 		Pretext:  content,
+		Title:    path.Base(directory),
 		Text:     extraFields,
 		Fields:   fields,
 		Footer:   fmt.Sprintf("agent-bridge %s (%s)", p.version, p.agentDriver),
