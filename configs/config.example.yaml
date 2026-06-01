@@ -45,7 +45,6 @@ agent:
       # - action
       # - artifact
       # - diagnostic
-  # OpenCode driver configuration
   opencode:
     base_url: "http://127.0.0.1:4096"
     username: ""
