@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 type FileConversationStore struct {
@@ -144,7 +144,7 @@ func (s *FileConversationStore) SetDefaultDirectory(chatSessionID string, direct
 	s.persistLocked()
 }
 
-func (s *FileConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef) {
+func (s *FileConversationStore) SetLastModel(chatSessionID string, model types.ModelRef) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return

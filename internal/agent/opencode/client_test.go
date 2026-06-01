@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 	ocsdk "github.com/sst/opencode-sdk-go"
 )
 
@@ -153,7 +153,7 @@ func TestReplyPermissionUsesSessionPermissionEndpoint(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL)
-	if err := client.ReplyPermission(context.Background(), "s1", "perm-1", agent.PermissionReplyOnce); err != nil {
+	if err := client.ReplyPermission(context.Background(), "s1", "perm-1", types.PermissionReplyOnce); err != nil {
 		t.Fatalf("ReplyPermission() error = %v", err)
 	}
 }
@@ -461,7 +461,7 @@ func TestExtractReplyFiltersByMessageOutputOptions(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		output         agent.MessageOutputOptions
+		output         types.MessageOutputOptions
 		wantAnswer     string
 		wantReasoning  string
 		wantTools      string
@@ -470,28 +470,28 @@ func TestExtractReplyFiltersByMessageOutputOptions(t *testing.T) {
 	}{
 		{
 			name:       "empty include outputs answer only",
-			output:     agent.MessageOutputOptions{},
+			output:     types.MessageOutputOptions{},
 			wantAnswer: "final answer",
 		},
 		{
 			name:       "answer only",
-			output:     agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentAnswer}},
+			output:     types.MessageOutputOptions{Include: []types.MessageContentKind{types.MessageContentAnswer}},
 			wantAnswer: "final answer",
 		},
 		{
 			name:          "reasoning only",
-			output:        agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentReasoning}},
+			output:        types.MessageOutputOptions{Include: []types.MessageContentKind{types.MessageContentReasoning}},
 			wantReasoning: "private chain",
 		},
 		{
 			name:        "action and artifact",
-			output:      agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentAction, agent.MessageContentArtifact}},
+			output:      types.MessageOutputOptions{Include: []types.MessageContentKind{types.MessageContentAction, types.MessageContentArtifact}},
 			wantTools:   "<tool",
 			wantPatches: "<patch>main.go</patch>",
 		},
 		{
 			name:       "unmatched category outputs nothing",
-			output:     agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentDiagnostic}},
+			output:     types.MessageOutputOptions{Include: []types.MessageContentKind{types.MessageContentDiagnostic}},
 			wantAnswer: "",
 		},
 	}

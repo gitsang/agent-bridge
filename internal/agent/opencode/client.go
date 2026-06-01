@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 	_ "github.com/mattn/go-sqlite3"
 	ocsdk "github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode-sdk-go/option"
@@ -150,7 +150,7 @@ func NewClient(baseURL string, options ...Option) *Client {
 	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout, dbPath: resolved.DBPath}
 }
 
-func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Session, error) {
+func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
 	params := ocsdk.SessionListParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -161,17 +161,17 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Se
 		return nil, err
 	}
 	if resp == nil {
-		return []agent.Session{}, nil
+		return []types.Session{}, nil
 	}
 
-	sessions := make([]agent.Session, 0, len(*resp))
+	sessions := make([]types.Session, 0, len(*resp))
 	for _, s := range *resp {
 		sessions = append(sessions, toSession(s))
 	}
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
+func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	if c.dbPath == "" {
 		return nil, fmt.Errorf("db_path not configured for opencode client")
 	}
@@ -192,9 +192,9 @@ func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
 	}
 	defer rows.Close()
 
-	var sessions []agent.Session
+	var sessions []types.Session
 	for rows.Next() {
-		var s agent.Session
+		var s types.Session
 		var timeUpdatedMs float64
 		if err := rows.Scan(&s.ID, &s.Title, &s.Directory, &timeUpdatedMs); err != nil {
 			continue
@@ -208,7 +208,7 @@ func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
 	return sessions, nil
 }
 
-func (c *Client) ListModels(ctx context.Context, directory string) ([]agent.ModelInfo, error) {
+func (c *Client) ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error) {
 	params := ocsdk.AppProvidersParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -219,10 +219,10 @@ func (c *Client) ListModels(ctx context.Context, directory string) ([]agent.Mode
 		return nil, err
 	}
 	if resp == nil {
-		return []agent.ModelInfo{}, nil
+		return []types.ModelInfo{}, nil
 	}
 
-	models := make([]agent.ModelInfo, 0)
+	models := make([]types.ModelInfo, 0)
 	for _, provider := range resp.Providers {
 		providerID := strings.TrimSpace(provider.ID)
 		providerName := strings.TrimSpace(provider.Name)
@@ -234,8 +234,8 @@ func (c *Client) ListModels(ctx context.Context, directory string) ([]agent.Mode
 			if resolvedModelID == "" || providerID == "" {
 				continue
 			}
-			models = append(models, agent.ModelInfo{
-				ModelRef:     agent.ModelRef{ProviderID: providerID, ModelID: resolvedModelID},
+			models = append(models, types.ModelInfo{
+				ModelRef:     types.ModelRef{ProviderID: providerID, ModelID: resolvedModelID},
 				ProviderName: providerName,
 				ModelName:    strings.TrimSpace(model.Name),
 			})
@@ -252,7 +252,7 @@ func (c *Client) ListModels(ctx context.Context, directory string) ([]agent.Mode
 	return models, nil
 }
 
-func (c *Client) ListAgents(ctx context.Context, directory string) ([]agent.AgentInfo, error) {
+func (c *Client) ListAgents(ctx context.Context, directory string) ([]types.AgentInfo, error) {
 	params := ocsdk.AgentListParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -263,16 +263,16 @@ func (c *Client) ListAgents(ctx context.Context, directory string) ([]agent.Agen
 		return nil, err
 	}
 	if resp == nil {
-		return []agent.AgentInfo{}, nil
+		return []types.AgentInfo{}, nil
 	}
 
-	agents := make([]agent.AgentInfo, 0, len(*resp))
+	agents := make([]types.AgentInfo, 0, len(*resp))
 	for _, item := range *resp {
 		resolvedName := strings.TrimSpace(item.Name)
 		if resolvedName == "" {
 			continue
 		}
-		agents = append(agents, agent.AgentInfo{
+		agents = append(agents, types.AgentInfo{
 			Name:        resolvedName,
 			Description: strings.TrimSpace(item.Description),
 			Mode:        strings.TrimSpace(string(item.Mode)),
@@ -286,7 +286,7 @@ func (c *Client) ListAgents(ctx context.Context, directory string) ([]agent.Agen
 	return agents, nil
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Session, error) {
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -320,13 +320,13 @@ func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]oc
 	return *resp, nil
 }
 
-func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Message, error) {
+func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make([]agent.Message, 0, len(raw))
+	messages := make([]types.Message, 0, len(raw))
 	for i, msg := range raw {
 		c.logger.Debug("session message response",
 			slog.String("session_id", sessionID),
@@ -334,9 +334,9 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Mes
 			slog.Any("info", msg.Info),
 			slog.Any("parts", msg.Parts),
 		)
-		messages = append(messages, agent.Message{
+		messages = append(messages, types.Message{
 			ID: strings.TrimSpace(msg.Info.ID),
-			Model: agent.ModelRef{
+			Model: types.ModelRef{
 				ProviderID: strings.TrimSpace(msg.Info.ProviderID),
 				ModelID:    strings.TrimSpace(msg.Info.ModelID),
 			},
@@ -347,7 +347,7 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Mes
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.Message, error) {
+func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -364,9 +364,9 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 		if assistant.Time.Completed <= 0 {
 			continue
 		}
-		msg := agent.Message{
+		msg := types.Message{
 			ID: strings.TrimSpace(raw[i].Info.ID),
-			Model: agent.ModelRef{
+			Model: types.ModelRef{
 				ProviderID: strings.TrimSpace(raw[i].Info.ProviderID),
 				ModelID:    strings.TrimSpace(raw[i].Info.ModelID),
 			},
@@ -384,7 +384,7 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 	return nil, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionRequest) (*agent.Session, error) {
+func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	params := ocsdk.SessionNewParams{}
 	if strings.TrimSpace(request.Directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(request.Directory))
@@ -404,7 +404,7 @@ func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionR
 	return &s, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -414,7 +414,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 		return nil, fmt.Errorf("message content is required")
 	}
 
-	resolvedOptions := agent.PromptOptions{}
+	resolvedOptions := types.PromptOptions{}
 	for _, apply := range optfs {
 		if apply == nil {
 			continue
@@ -478,11 +478,11 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 		close(doneCh)
 	}()
 
-	return agent.NewPromptHandle(doneCh, errCh), nil
+	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output agent.MessageOutputOptions) ([]*agent.Message, error) {
-	var results []*agent.Message
+func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
+	var results []*types.Message
 	var retErr error
 	logger := c.logger.With(
 		"session_id", sessionID,
@@ -527,7 +527,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 		return candidates[i].Time.Completed < candidates[j].Time.Completed
 	})
 
-	results = make([]*agent.Message, 0, len(candidates))
+	results = make([]*types.Message, 0, len(candidates))
 	for _, candidate := range candidates {
 		resp, err := c.client.Session.Message(ctx, sessionID, candidate.ID, ocsdk.SessionMessageParams{})
 		if err != nil {
@@ -551,7 +551,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
-func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) ([]agent.PermissionRequest, error) {
+func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) ([]types.PermissionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -562,7 +562,7 @@ func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) (
 		return nil, err
 	}
 
-	requests := make([]agent.PermissionRequest, 0, len(raw))
+	requests := make([]types.PermissionRequest, 0, len(raw))
 	for _, item := range raw {
 		if strings.TrimSpace(item.SessionID) != resolvedSessionID {
 			continue
@@ -575,14 +575,14 @@ func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) (
 		if callID == "" {
 			callID = strings.TrimSpace(item.CallID)
 		}
-		requests = append(requests, agent.PermissionRequest{
+		requests = append(requests, types.PermissionRequest{
 			ID:         strings.TrimSpace(item.ID),
 			SessionID:  strings.TrimSpace(item.SessionID),
 			Permission: resolvePermissionLabel(item),
 			Patterns:   resolvePermissionPatterns(item),
 			Always:     trimStringSlice(item.Always),
 			Metadata:   item.Metadata,
-			Tool: agent.InteractionTool{
+			Tool: types.InteractionTool{
 				MessageID: messageID,
 				CallID:    callID,
 			},
@@ -592,7 +592,7 @@ func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) (
 	return requests, nil
 }
 
-func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply agent.PermissionReply) error {
+func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("opencode session id is required")
 	}
@@ -600,20 +600,20 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	if resolvedRequestID == "" {
 		return fmt.Errorf("permission request id is required")
 	}
-	resolvedReply := agent.PermissionReply(strings.TrimSpace(string(reply)))
-	if resolvedReply != agent.PermissionReplyOnce && resolvedReply != agent.PermissionReplyAlways && resolvedReply != agent.PermissionReplyReject {
+	resolvedReply := types.PermissionReply(strings.TrimSpace(string(reply)))
+	if resolvedReply != types.PermissionReplyOnce && resolvedReply != types.PermissionReplyAlways && resolvedReply != types.PermissionReplyReject {
 		return fmt.Errorf("unsupported permission reply: %s", resolvedReply)
 	}
 
 	response := ocsdk.SessionPermissionRespondParamsResponse(resolvedReply)
 	ok, err := c.client.Session.Permissions.Respond(ctx, strings.TrimSpace(sessionID), resolvedRequestID, ocsdk.SessionPermissionRespondParams{Response: ocsdk.F(response)})
 	if isNotFound(err) || ((ok == nil || !*ok) && err == nil) {
-		return agent.ErrInteractionNoLongerPending
+		return types.ErrInteractionNoLongerPending
 	}
 	return err
 }
 
-func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]agent.QuestionRequest, error) {
+func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]types.QuestionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 
 	var raw []rawQuestionRequest
@@ -621,24 +621,24 @@ func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]
 		return nil, err
 	}
 
-	requests := make([]agent.QuestionRequest, 0, len(raw))
+	requests := make([]types.QuestionRequest, 0, len(raw))
 	for _, item := range raw {
 		if resolvedSessionID != "" && strings.TrimSpace(item.SessionID) != resolvedSessionID {
 			continue
 		}
-		questions := make([]agent.Question, 0, len(item.Questions))
+		questions := make([]types.Question, 0, len(item.Questions))
 		for _, question := range item.Questions {
-			questions = append(questions, agent.Question{
+			questions = append(questions, types.Question{
 				Text:     firstNonEmpty(strings.TrimSpace(question.Question), strings.TrimSpace(question.Text)),
 				Options:  trimQuestionOptions(question.Options),
 				Multiple: question.Multiple,
 			})
 		}
-		requests = append(requests, agent.QuestionRequest{
+		requests = append(requests, types.QuestionRequest{
 			ID:        strings.TrimSpace(item.ID),
 			SessionID: strings.TrimSpace(item.SessionID),
 			Questions: questions,
-			Tool: agent.InteractionTool{
+			Tool: types.InteractionTool{
 				MessageID: strings.TrimSpace(item.Tool.MessageID),
 				CallID:    strings.TrimSpace(item.Tool.CallID),
 			},
@@ -672,7 +672,7 @@ func (c *Client) ReplyQuestion(ctx context.Context, sessionID string, requestID 
 	var ok bool
 	err := c.client.Post(ctx, fmt.Sprintf("/question/%s/reply", resolvedRequestID), rawQuestionReply{Answers: resolvedAnswers}, &ok)
 	if isNotFound(err) || (!ok && err == nil) {
-		return agent.ErrInteractionNoLongerPending
+		return types.ErrInteractionNoLongerPending
 	}
 	return err
 }
@@ -689,12 +689,12 @@ func (c *Client) RejectQuestion(ctx context.Context, sessionID string, requestID
 	var ok bool
 	err := c.client.Post(ctx, fmt.Sprintf("/question/%s/reject", resolvedRequestID), nil, &ok)
 	if isNotFound(err) || (!ok && err == nil) {
-		return agent.ErrInteractionNoLongerPending
+		return types.ErrInteractionNoLongerPending
 	}
 	return err
 }
 
-func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output agent.MessageOutputOptions) (*agent.Message, error) {
+func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output types.MessageOutputOptions) (*types.Message, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
 	}
@@ -713,14 +713,14 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	}
 
 	content := extractContent(response.Parts, output)
-	result := &agent.Message{
+	result := &types.Message{
 		Content:     content.Answer,
 		Reasoning:   content.Reasoning,
 		Tools:       content.Tools,
 		Patches:     content.Patches,
 		Diagnostics: content.Diagnostics,
 		SessionID:   resultSessionID,
-		Model: agent.ModelRef{
+		Model: types.ModelRef{
 			ProviderID: strings.TrimSpace(assistant.ProviderID),
 			ModelID:    strings.TrimSpace(assistant.ModelID),
 		},
@@ -730,10 +730,10 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	return result, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agent.ModelRef, error) {
+func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
-		return agent.ModelRef{}, fmt.Errorf("model is required")
+		return types.ModelRef{}, fmt.Errorf("model is required")
 	}
 
 	if strings.Contains(resolvedModel, "/") {
@@ -741,17 +741,17 @@ func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agen
 		providerID := strings.TrimSpace(pair[0])
 		modelID := strings.TrimSpace(pair[1])
 		if providerID == "" || modelID == "" {
-			return agent.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
+			return types.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
 		}
-		return agent.ModelRef{ProviderID: providerID, ModelID: modelID}, nil
+		return types.ModelRef{ProviderID: providerID, ModelID: modelID}, nil
 	}
 
 	models, err := c.ListModels(ctx, directory)
 	if err != nil {
-		return agent.ModelRef{}, err
+		return types.ModelRef{}, err
 	}
 
-	matches := make([]agent.ModelInfo, 0, 4)
+	matches := make([]types.ModelInfo, 0, 4)
 	for _, candidate := range models {
 		if strings.EqualFold(candidate.ModelID, resolvedModel) {
 			matches = append(matches, candidate)
@@ -759,21 +759,21 @@ func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agen
 	}
 
 	if len(matches) == 0 {
-		return agent.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
+		return types.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 	}
 	if len(matches) > 1 {
-		return agent.ModelRef{}, fmt.Errorf("ambiguous model %s, use provider/model", resolvedModel)
+		return types.ModelRef{}, fmt.Errorf("ambiguous model %s, use provider/model", resolvedModel)
 	}
 
 	return matches[0].ModelRef, nil
 }
 
-func toSession(s ocsdk.Session) agent.Session {
+func toSession(s ocsdk.Session) types.Session {
 	var updatedAt time.Time
 	if s.Time.Updated > 0 {
 		updatedAt = time.Unix(0, int64(s.Time.Updated*float64(time.Millisecond)))
 	}
-	return agent.Session{
+	return types.Session{
 		ID:        strings.TrimSpace(s.ID),
 		Title:     strings.TrimSpace(s.Title),
 		Directory: strings.TrimSpace(s.Directory),
@@ -869,13 +869,13 @@ type extractedContent struct {
 	Diagnostics string
 }
 
-func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extractedContent {
+func extractContent(parts []ocsdk.Part, output types.MessageOutputOptions) extractedContent {
 	var result extractedContent
 
 	for _, part := range parts {
 		switch part.Type {
 		case ocsdk.PartTypeText:
-			if !output.Includes(agent.MessageContentAnswer) {
+			if !output.Includes(types.MessageContentAnswer) {
 				break
 			}
 			text := strings.TrimSpace(part.Text)
@@ -884,7 +884,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 			}
 			result.Answer += "\n" + text
 		case ocsdk.PartTypeReasoning:
-			if !output.Includes(agent.MessageContentReasoning) {
+			if !output.Includes(types.MessageContentReasoning) {
 				break
 			}
 			text := strings.TrimSpace(part.Text)
@@ -893,7 +893,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 			}
 			result.Reasoning += "\n" + text
 		case ocsdk.PartTypeFile:
-			if !output.Includes(agent.MessageContentArtifactFile) {
+			if !output.Includes(types.MessageContentArtifactFile) {
 				break
 			}
 			filename := strings.TrimSpace(part.Filename)
@@ -902,7 +902,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 			}
 			result.Patches += fmt.Sprintf("\n<file name=%s />", filename)
 		case ocsdk.PartTypeTool:
-			if !output.Includes(agent.MessageContentActionTool) {
+			if !output.Includes(types.MessageContentActionTool) {
 				break
 			}
 			state, ok := part.State.(ocsdk.ToolPartState)
@@ -924,7 +924,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 		case ocsdk.PartTypeStepStart:
 		case ocsdk.PartTypeStepFinish:
 		case ocsdk.PartTypeSnapshot:
-			if !output.Includes(agent.MessageContentArtifactState) {
+			if !output.Includes(types.MessageContentArtifactState) {
 				break
 			}
 			text := strings.TrimSpace(part.Snapshot)
@@ -933,7 +933,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 			}
 			result.Patches += fmt.Sprintf("\n<snapshot>%s</snapshot>", text)
 		case ocsdk.PartTypePatch:
-			if !output.Includes(agent.MessageContentArtifactPatch) {
+			if !output.Includes(types.MessageContentArtifactPatch) {
 				break
 			}
 			if files, ok := part.Files.([]string); ok {
@@ -944,7 +944,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 				result.Patches += fmt.Sprintf("\n<patch>%s</patch>", text)
 			}
 		case ocsdk.PartTypeAgent:
-			if !output.Includes(agent.MessageContentActionAgent) {
+			if !output.Includes(types.MessageContentActionAgent) {
 				break
 			}
 			name := strings.TrimSpace(part.Name)
@@ -953,7 +953,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 			}
 			result.Tools += fmt.Sprintf("\n<agent name=\"%s\" />", name)
 		case ocsdk.PartTypeRetry:
-			if !output.Includes(agent.MessageContentDiagnostic) {
+			if !output.Includes(types.MessageContentDiagnostic) {
 				break
 			}
 			if e, ok := part.Error.(ocsdk.PartRetryPartError); ok {
@@ -975,7 +975,7 @@ func extractContent(parts []ocsdk.Part, output agent.MessageOutputOptions) extra
 	return result
 }
 
-func extractReply(parts []ocsdk.Part, output agent.MessageOutputOptions) string {
+func extractReply(parts []ocsdk.Part, output types.MessageOutputOptions) string {
 	content := extractContent(parts, output)
 	return content.Answer
 }

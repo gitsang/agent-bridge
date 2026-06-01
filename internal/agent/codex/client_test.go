@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 func TestClientCreateSessionStartsThreadAndSetsTitle(t *testing.T) {
@@ -49,7 +49,7 @@ func TestClientCreateSessionStartsThreadAndSetsTitle(t *testing.T) {
 		}
 	}, map[string]any{})
 
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestClientPromptAggregatesAssistantMessageDelta(t *testing.T) {
 
 	transport.expectRequest("initialize", nil, map[string]any{})
 	transport.expectRequest("thread/start", nil, map[string]any{"thread": fakeThread("thread-1", "/tmp/project", "")})
-	_, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Directory: "/tmp/project"})
+	_, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestClientPromptAggregatesAssistantMessageDelta(t *testing.T) {
 			t.Fatalf("turn/start model = %q, want %q", got, want)
 		}
 	}, map[string]any{"turn": map[string]any{"id": "turn-1", "status": "inProgress", "items": []any{}}})
-	handle, err := client.Prompt(context.Background(), "thread-1", "hello", agent.PromptWithDirectory("/tmp/project"), agent.PromptWithModel(agent.ModelRef{ProviderID: CodexProviderID, ModelID: "gpt-5.5"}))
+	handle, err := client.Prompt(context.Background(), "thread-1", "hello", types.PromptWithDirectory("/tmp/project"), types.PromptWithModel(types.ModelRef{ProviderID: CodexProviderID, ModelID: "gpt-5.5"}))
 	if err != nil {
 		t.Fatalf("Prompt() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestClientPromptAggregatesAssistantMessageDelta(t *testing.T) {
 
 	waitDone(t, handle)
 
-	messages, err := client.PollMessagesAfter(context.Background(), "thread-1", 0, agent.MessageOutputOptions{})
+	messages, err := client.PollMessagesAfter(context.Background(), "thread-1", 0, types.MessageOutputOptions{})
 	if err != nil {
 		t.Fatalf("PollMessagesAfter() error = %v", err)
 	}
@@ -157,7 +157,7 @@ func TestClientPermissionRequestAndReply(t *testing.T) {
 
 	transport.expectRequest("initialize", nil, map[string]any{})
 	transport.expectRequest("thread/start", nil, map[string]any{"thread": fakeThread("thread-1", "/tmp/project", "")})
-	_, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Directory: "/tmp/project"})
+	_, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -198,7 +198,7 @@ func TestClientPermissionRequestAndReply(t *testing.T) {
 		t.Fatalf("permission patterns = %#v, want cwd", requests[0].Patterns)
 	}
 
-	if err := client.ReplyPermission(context.Background(), "thread-1", "approval-1", agent.PermissionReplyAlways); err != nil {
+	if err := client.ReplyPermission(context.Background(), "thread-1", "approval-1", types.PermissionReplyAlways); err != nil {
 		t.Fatalf("ReplyPermission() error = %v", err)
 	}
 	response := transport.nextClientResponse()
@@ -223,7 +223,7 @@ func TestClientQuestionRequestAndReply(t *testing.T) {
 
 	transport.expectRequest("initialize", nil, map[string]any{})
 	transport.expectRequest("thread/start", nil, map[string]any{"thread": fakeThread("thread-1", "/tmp/project", "")})
-	_, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Directory: "/tmp/project"})
+	_, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -293,7 +293,7 @@ func TestClientContextCancelInterruptsTurn(t *testing.T) {
 
 	transport.expectRequest("initialize", nil, map[string]any{})
 	transport.expectRequest("thread/start", nil, map[string]any{"thread": fakeThread("thread-1", "/tmp/project", "")})
-	_, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Directory: "/tmp/project"})
+	_, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -360,7 +360,7 @@ func TestClientListAndResolveModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
-	if got, want := ref, (agent.ModelRef{ProviderID: CodexProviderID, ModelID: "gpt-5.4"}); got != want {
+	if got, want := ref, (types.ModelRef{ProviderID: CodexProviderID, ModelID: "gpt-5.4"}); got != want {
 		t.Fatalf("ResolveModel() = %#v, want %#v", got, want)
 	}
 	transport.assertDone()
@@ -372,7 +372,7 @@ func TestClientMessageOutputOptionsFilterKinds(t *testing.T) {
 
 	transport.expectRequest("initialize", nil, map[string]any{})
 	transport.expectRequest("thread/start", nil, map[string]any{"thread": fakeThread("thread-1", "/tmp/project", "")})
-	_, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Directory: "/tmp/project"})
+	_, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -390,7 +390,7 @@ func TestClientMessageOutputOptionsFilterKinds(t *testing.T) {
 
 	waitDone(t, handle)
 
-	messages, err := client.PollMessagesAfter(context.Background(), "thread-1", 0, agent.MessageOutputOptions{Include: []agent.MessageContentKind{agent.MessageContentAnswer}})
+	messages, err := client.PollMessagesAfter(context.Background(), "thread-1", 0, types.MessageOutputOptions{Include: []types.MessageContentKind{types.MessageContentAnswer}})
 	if err != nil {
 		t.Fatalf("PollMessagesAfter() error = %v", err)
 	}
@@ -565,7 +565,7 @@ func fakeThread(id, cwd, title string) map[string]any {
 	}
 }
 
-func waitDone(t *testing.T, handle *agent.PromptHandle) {
+func waitDone(t *testing.T, handle *types.PromptHandle) {
 	t.Helper()
 	select {
 	case <-handle.Done():
@@ -576,7 +576,7 @@ func waitDone(t *testing.T, handle *agent.PromptHandle) {
 	}
 }
 
-func waitPermissions(t *testing.T, client *Client, sessionID string) ([]agent.PermissionRequest, error) {
+func waitPermissions(t *testing.T, client *Client, sessionID string) ([]types.PermissionRequest, error) {
 	t.Helper()
 	for i := 0; i < 10; i++ {
 		requests, err := client.ListPendingPermissions(context.Background(), sessionID)
@@ -588,7 +588,7 @@ func waitPermissions(t *testing.T, client *Client, sessionID string) ([]agent.Pe
 	return client.ListPendingPermissions(context.Background(), sessionID)
 }
 
-func waitQuestions(t *testing.T, client *Client, sessionID string) ([]agent.QuestionRequest, error) {
+func waitQuestions(t *testing.T, client *Client, sessionID string) ([]types.QuestionRequest, error) {
 	t.Helper()
 	for i := 0; i < 10; i++ {
 		requests, err := client.ListPendingQuestions(context.Background(), sessionID)

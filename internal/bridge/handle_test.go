@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 func TestHandlePromptPassesMessageOutputOptions(t *testing.T) {
@@ -14,15 +14,15 @@ func TestHandlePromptPassesMessageOutputOptions(t *testing.T) {
 	close(doneCh)
 	errCh := make(chan error)
 	client := &fakeAgentClient{
-		promptHandle: agent.NewPromptHandle(doneCh, errCh),
-		pollMessages: []*agent.Message{{
+		promptHandle: types.NewPromptHandle(doneCh, errCh),
+		pollMessages: []*types.Message{{
 			SessionID:   "agent-session",
 			Content:     "hello",
 			CompletedAt: 1,
 		}},
 	}
-	output := agent.MessageOutputOptions{
-		Include: []agent.MessageContentKind{agent.MessageContentAnswer},
+	output := types.MessageOutputOptions{
+		Include: []types.MessageContentKind{types.MessageContentAnswer},
 	}
 	bridge := New(
 		WithAgentClient(client),
@@ -40,7 +40,7 @@ func TestHandlePromptPassesMessageOutputOptions(t *testing.T) {
 	if got, want := len(replies), 1; got != want {
 		t.Fatalf("reply count = %d, want %d", got, want)
 	}
-	if got, want := client.pollOutput.Include[0], agent.MessageContentAnswer; got != want {
+	if got, want := client.pollOutput.Include[0], types.MessageContentAnswer; got != want {
 		t.Fatalf("PollMessagesAfter() include[0] = %q, want %q", got, want)
 	}
 }
@@ -48,17 +48,17 @@ func TestHandlePromptPassesMessageOutputOptions(t *testing.T) {
 func TestAdvanceCompletedCursorKeepsNewestCompletedResult(t *testing.T) {
 	after := float64(5)
 
-	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 0})
+	after = advanceCompletedCursor(after, &types.Message{CompletedAt: 0})
 	if got, want := after, float64(5); got != want {
 		t.Fatalf("advanceCompletedCursor() with unfinished result = %v, want %v", got, want)
 	}
 
-	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 4})
+	after = advanceCompletedCursor(after, &types.Message{CompletedAt: 4})
 	if got, want := after, float64(5); got != want {
 		t.Fatalf("advanceCompletedCursor() with older result = %v, want %v", got, want)
 	}
 
-	after = advanceCompletedCursor(after, &agent.Message{CompletedAt: 7})
+	after = advanceCompletedCursor(after, &types.Message{CompletedAt: 7})
 	if got, want := after, float64(7); got != want {
 		t.Fatalf("advanceCompletedCursor() with newer result = %v, want %v", got, want)
 	}
@@ -66,7 +66,7 @@ func TestAdvanceCompletedCursorKeepsNewestCompletedResult(t *testing.T) {
 
 func TestHandlePermissionCommandAutoTargetsSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingPermissions: []agent.PermissionRequest{{ID: "perm-1", SessionID: "s1", Permission: "edit"}},
+		pendingPermissions: []types.PermissionRequest{{ID: "perm-1", SessionID: "s1", Permission: "edit"}},
 	}
 	bridge := New(WithAgentClient(client))
 	bridge.conversationStore.PutBinding("chat-session", "s1")
@@ -79,7 +79,7 @@ func TestHandlePermissionCommandAutoTargetsSinglePendingRequest(t *testing.T) {
 	if got, want := client.replyPermissionRequestID, "perm-1"; got != want {
 		t.Fatalf("ReplyPermission() request = %q, want %q", got, want)
 	}
-	if got, want := client.replyPermissionReply, agent.PermissionReplyOnce; got != want {
+	if got, want := client.replyPermissionReply, types.PermissionReplyOnce; got != want {
 		t.Fatalf("ReplyPermission() reply = %q, want %q", got, want)
 	}
 	if got := replies[0].Content; !strings.Contains(got, "Permission request perm-1 replied with once") {
@@ -89,7 +89,7 @@ func TestHandlePermissionCommandAutoTargetsSinglePendingRequest(t *testing.T) {
 
 func TestHandlePermissionCommandRequiresTargetWhenMultiplePending(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingPermissions: []agent.PermissionRequest{
+		pendingPermissions: []types.PermissionRequest{
 			{ID: "perm-1", SessionID: "s1", Permission: "edit"},
 			{ID: "perm-2", SessionID: "s1", Permission: "bash"},
 		},
@@ -109,7 +109,7 @@ func TestHandlePermissionCommandRequiresTargetWhenMultiplePending(t *testing.T) 
 
 func TestHandlePermissionCommandTargetsIndex(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingPermissions: []agent.PermissionRequest{
+		pendingPermissions: []types.PermissionRequest{
 			{ID: "perm-1", SessionID: "s1", Permission: "edit"},
 			{ID: "perm-2", SessionID: "s1", Permission: "bash"},
 		},
@@ -122,14 +122,14 @@ func TestHandlePermissionCommandTargetsIndex(t *testing.T) {
 	if got, want := client.replyPermissionRequestID, "perm-2"; got != want {
 		t.Fatalf("ReplyPermission() request = %q, want %q", got, want)
 	}
-	if got, want := client.replyPermissionReply, agent.PermissionReplyReject; got != want {
+	if got, want := client.replyPermissionReply, types.PermissionReplyReject; got != want {
 		t.Fatalf("ReplyPermission() reply = %q, want %q", got, want)
 	}
 }
 
 func TestHandlePermissionCommandTargetsID(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingPermissions: []agent.PermissionRequest{
+		pendingPermissions: []types.PermissionRequest{
 			{ID: "perm-1", SessionID: "s1", Permission: "edit"},
 			{ID: "perm-2", SessionID: "s1", Permission: "bash"},
 		},
@@ -146,7 +146,7 @@ func TestHandlePermissionCommandTargetsID(t *testing.T) {
 
 func TestHandlePermissionCommandReportsStaleRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingPermissions: []agent.PermissionRequest{{ID: "perm-1", SessionID: "s1", Permission: "edit"}},
+		pendingPermissions: []types.PermissionRequest{{ID: "perm-1", SessionID: "s1", Permission: "edit"}},
 	}
 	bridge := New(WithAgentClient(client))
 	bridge.conversationStore.PutBinding("chat-session", "s1")
@@ -163,10 +163,10 @@ func TestHandlePermissionCommandReportsStaleRequest(t *testing.T) {
 
 func TestHandleQuestionCommandAutoTargetsSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "question-1",
 			SessionID: "s1",
-			Questions: []agent.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
+			Questions: []types.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -190,10 +190,10 @@ func TestHandleQuestionCommandAutoTargetsSinglePendingRequest(t *testing.T) {
 
 func TestHandleQuestionCommandAcceptsExplicitIDForSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "question-1",
 			SessionID: "s1",
-			Questions: []agent.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
+			Questions: []types.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -211,10 +211,10 @@ func TestHandleQuestionCommandAcceptsExplicitIDForSinglePendingRequest(t *testin
 
 func TestHandleQuestionCommandAcceptsExplicitIDWithoutConversationBinding(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "que_e3fc14a980019F6xw5McDKtETi",
 			SessionID: "s1",
-			Questions: []agent.Question{{Text: "Continue?", Options: []string{"Yes", "No"}}},
+			Questions: []types.Question{{Text: "Continue?", Options: []string{"Yes", "No"}}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -240,10 +240,10 @@ func TestHandleQuestionCommandAcceptsExplicitIDWithoutConversationBinding(t *tes
 
 func TestHandleQuestionCommandMapsOptionIndexForSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "question-1",
 			SessionID: "s1",
-			Questions: []agent.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
+			Questions: []types.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -261,10 +261,10 @@ func TestHandleQuestionCommandMapsOptionIndexForSinglePendingRequest(t *testing.
 
 func TestHandleQuestionCommandKeepsFreeTextAnswerTogether(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "question-1",
 			SessionID: "s1",
-			Questions: []agent.Question{{Text: "Reason?"}},
+			Questions: []types.Question{{Text: "Reason?"}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -279,7 +279,7 @@ func TestHandleQuestionCommandKeepsFreeTextAnswerTogether(t *testing.T) {
 
 func TestHandleQuestionRejectAutoTargetsSinglePendingRequest(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{{ID: "question-1", SessionID: "s1", Questions: []agent.Question{{Text: "Continue?"}}}},
+		pendingQuestions: []types.QuestionRequest{{ID: "question-1", SessionID: "s1", Questions: []types.Question{{Text: "Continue?"}}}},
 	}
 	bridge := New(WithAgentClient(client))
 	bridge.conversationStore.PutBinding("chat-session", "s1")
@@ -299,9 +299,9 @@ func TestHandleQuestionRejectAutoTargetsSinglePendingRequest(t *testing.T) {
 
 func TestHandleQuestionCommandRequiresTargetWhenMultiplePending(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{
-			{ID: "question-1", SessionID: "s1", Questions: []agent.Question{{Text: "Environment?"}}},
-			{ID: "question-2", SessionID: "s1", Questions: []agent.Question{{Text: "Region?"}}},
+		pendingQuestions: []types.QuestionRequest{
+			{ID: "question-1", SessionID: "s1", Questions: []types.Question{{Text: "Environment?"}}},
+			{ID: "question-2", SessionID: "s1", Questions: []types.Question{{Text: "Region?"}}},
 		},
 	}
 	bridge := New(WithAgentClient(client))
@@ -319,9 +319,9 @@ func TestHandleQuestionCommandRequiresTargetWhenMultiplePending(t *testing.T) {
 
 func TestHandleQuestionCommandTargetsIDWhenMultiplePending(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{
-			{ID: "question-1", SessionID: "s1", Questions: []agent.Question{{Text: "Environment?", Options: []string{"staging", "production"}}}},
-			{ID: "question-2", SessionID: "s1", Questions: []agent.Question{{Text: "Region?", Options: []string{"us", "eu"}}}},
+		pendingQuestions: []types.QuestionRequest{
+			{ID: "question-1", SessionID: "s1", Questions: []types.Question{{Text: "Environment?", Options: []string{"staging", "production"}}}},
+			{ID: "question-2", SessionID: "s1", Questions: []types.Question{{Text: "Region?", Options: []string{"us", "eu"}}}},
 		},
 	}
 	bridge := New(WithAgentClient(client))
@@ -339,9 +339,9 @@ func TestHandleQuestionCommandTargetsIDWhenMultiplePending(t *testing.T) {
 
 func TestHandleQuestionCommandTargetsQueIDWhenMultiplePendingWithoutBinding(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{
-			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []agent.Question{{Text: "如果今天只能选一种补给，你会选哪一个？", Options: []string{"第一", "第二"}}}},
-			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []agent.Question{{Text: "如果今天只能做一件让自己更轻松的事，你会选哪一种？", Options: []string{"休息", "散步"}}}},
+		pendingQuestions: []types.QuestionRequest{
+			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []types.Question{{Text: "如果今天只能选一种补给，你会选哪一个？", Options: []string{"第一", "第二"}}}},
+			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []types.Question{{Text: "如果今天只能做一件让自己更轻松的事，你会选哪一种？", Options: []string{"休息", "散步"}}}},
 		},
 	}
 	bridge := New(WithAgentClient(client))
@@ -361,9 +361,9 @@ func TestHandleQuestionCommandTargetsQueIDWhenMultiplePendingWithoutBinding(t *t
 
 func TestHandleQuestionCommandTargetsQueIDWithInvisibleFormatting(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{
-			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []agent.Question{{Text: "First?", Options: []string{"One"}}}},
-			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []agent.Question{{Text: "Second?", Options: []string{"Two"}}}},
+		pendingQuestions: []types.QuestionRequest{
+			{ID: "que_e3fc14a980019F6xw5McDKtETi", SessionID: "s1", Questions: []types.Question{{Text: "First?", Options: []string{"One"}}}},
+			{ID: "que_e433cceeb001KUfhw7pLIFIWJ5", SessionID: "s2", Questions: []types.Question{{Text: "Second?", Options: []string{"Two"}}}},
 		},
 	}
 	bridge := New(WithAgentClient(client))
@@ -380,9 +380,9 @@ func TestHandleQuestionCommandTargetsQueIDWithInvisibleFormatting(t *testing.T) 
 
 func TestHandleQuestionCommandExplicitUnknownQueIDDoesNotShowMultiplePending(t *testing.T) {
 	client := &fakeAgentClient{
-		pendingQuestions: []agent.QuestionRequest{
-			{ID: "que_one", SessionID: "s1", Questions: []agent.Question{{Text: "First?"}}},
-			{ID: "que_two", SessionID: "s2", Questions: []agent.Question{{Text: "Second?"}}},
+		pendingQuestions: []types.QuestionRequest{
+			{ID: "que_one", SessionID: "s1", Questions: []types.Question{{Text: "First?"}}},
+			{ID: "que_two", SessionID: "s2", Questions: []types.Question{{Text: "Second?"}}},
 		},
 	}
 	bridge := New(WithAgentClient(client))
@@ -416,13 +416,13 @@ func TestHandlePromptForwardsPendingPermissionBeforeAssistantReply(t *testing.T)
 	doneCh := make(chan struct{})
 	errCh := make(chan error)
 	client := &fakeAgentClient{
-		promptHandle: agent.NewPromptHandle(doneCh, errCh),
-		pollMessages: []*agent.Message{{
+		promptHandle: types.NewPromptHandle(doneCh, errCh),
+		pollMessages: []*types.Message{{
 			SessionID:   "agent-session",
 			Content:     "assistant reply",
 			CompletedAt: 1,
 		}},
-		pendingPermissions: []agent.PermissionRequest{{ID: "perm-1", SessionID: "agent-session", Permission: "edit", Patterns: []string{"main.go"}}},
+		pendingPermissions: []types.PermissionRequest{{ID: "perm-1", SessionID: "agent-session", Permission: "edit", Patterns: []string{"main.go"}}},
 	}
 	bridge := New(WithAgentClient(client))
 
@@ -443,16 +443,16 @@ func TestHandlePromptForwardsPendingQuestionBeforeAssistantReply(t *testing.T) {
 	doneCh := make(chan struct{})
 	errCh := make(chan error)
 	client := &fakeAgentClient{
-		promptHandle: agent.NewPromptHandle(doneCh, errCh),
-		pollMessages: []*agent.Message{{
+		promptHandle: types.NewPromptHandle(doneCh, errCh),
+		pollMessages: []*types.Message{{
 			SessionID:   "agent-session",
 			Content:     "assistant reply",
 			CompletedAt: 1,
 		}},
-		pendingQuestions: []agent.QuestionRequest{{
+		pendingQuestions: []types.QuestionRequest{{
 			ID:        "question-1",
 			SessionID: "agent-session",
-			Questions: []agent.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
+			Questions: []types.Question{{Text: "Environment?", Options: []string{"staging", "production"}}},
 		}},
 	}
 	bridge := New(WithAgentClient(client))
@@ -471,9 +471,9 @@ func TestHandlePromptForwardsPendingQuestionBeforeAssistantReply(t *testing.T) {
 }
 
 func TestFormatQuestionRequestUsesTemplateReplyHint(t *testing.T) {
-	request := agent.QuestionRequest{
+	request := types.QuestionRequest{
 		ID: "que_e435186110017C9zyr55kstCbi",
-		Questions: []agent.Question{{
+		Questions: []types.Question{{
 			Text:    "如果今天只安排一件轻松的事，你更想做哪一种？",
 			Options: []string{"散步", "看电影", "读书", "做饭"},
 		}},
@@ -506,13 +506,13 @@ func TestHandlePromptDoesNotRepeatSamePendingInteraction(t *testing.T) {
 	doneCh := make(chan struct{})
 	errCh := make(chan error)
 	client := &fakeAgentClient{
-		promptHandle: agent.NewPromptHandle(doneCh, errCh),
-		pollMessages: []*agent.Message{{
+		promptHandle: types.NewPromptHandle(doneCh, errCh),
+		pollMessages: []*types.Message{{
 			SessionID:   "agent-session",
 			Content:     "assistant reply",
 			CompletedAt: 1,
 		}},
-		pendingPermissions: []agent.PermissionRequest{{ID: "perm-1", SessionID: "agent-session", Permission: "edit"}},
+		pendingPermissions: []types.PermissionRequest{{ID: "perm-1", SessionID: "agent-session", Permission: "edit"}},
 	}
 	bridge := New(WithAgentClient(client))
 
@@ -607,19 +607,19 @@ func runPromptWithDelayedDone(t *testing.T, bridge *AgentBridge, doneCh chan str
 }
 
 type fakeAgentClient struct {
-	promptHandle       *agent.PromptHandle
-	pollMessages       []*agent.Message
+	promptHandle       *types.PromptHandle
+	pollMessages       []*types.Message
 	pollMessagesSent   bool
-	pollOutput         agent.MessageOutputOptions
-	pendingPermissions []agent.PermissionRequest
-	pendingQuestions   []agent.QuestionRequest
+	pollOutput         types.MessageOutputOptions
+	pendingPermissions []types.PermissionRequest
+	pendingQuestions   []types.QuestionRequest
 
 	listPendingQuestionsSessionID string
 
 	replyPermissionCalls     int
 	replyPermissionSessionID string
 	replyPermissionRequestID string
-	replyPermissionReply     agent.PermissionReply
+	replyPermissionReply     types.PermissionReply
 
 	replyQuestionCalls     int
 	replyQuestionSessionID string
@@ -631,47 +631,47 @@ type fakeAgentClient struct {
 	rejectQuestionRequestID string
 }
 
-func (c *fakeAgentClient) ListModels(context.Context, string) ([]agent.ModelInfo, error) {
+func (c *fakeAgentClient) ListModels(context.Context, string) ([]types.ModelInfo, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) ResolveModel(context.Context, string, string) (agent.ModelRef, error) {
-	return agent.ModelRef{}, nil
+func (c *fakeAgentClient) ResolveModel(context.Context, string, string) (types.ModelRef, error) {
+	return types.ModelRef{}, nil
 }
 
-func (c *fakeAgentClient) ListAgents(context.Context, string) ([]agent.AgentInfo, error) {
+func (c *fakeAgentClient) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) ListSessions(context.Context, string) ([]agent.Session, error) {
+func (c *fakeAgentClient) ListSessions(context.Context, string) ([]types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) ListAllSessions(context.Context) ([]agent.Session, error) {
+func (c *fakeAgentClient) ListAllSessions(context.Context) ([]types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) GetSession(context.Context, string) (*agent.Session, error) {
+func (c *fakeAgentClient) GetSession(context.Context, string) (*types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) CreateSession(context.Context, agent.CreateSessionRequest) (*agent.Session, error) {
-	return &agent.Session{ID: "agent-session"}, nil
+func (c *fakeAgentClient) CreateSession(context.Context, types.CreateSessionRequest) (*types.Session, error) {
+	return &types.Session{ID: "agent-session"}, nil
 }
 
-func (c *fakeAgentClient) GetMessages(context.Context, string) ([]agent.Message, error) {
+func (c *fakeAgentClient) GetMessages(context.Context, string) ([]types.Message, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) GetLatestAssistantMessage(context.Context, string) (*agent.Message, error) {
+func (c *fakeAgentClient) GetLatestAssistantMessage(context.Context, string) (*types.Message, error) {
 	return nil, nil
 }
 
-func (c *fakeAgentClient) Prompt(context.Context, string, string, ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+func (c *fakeAgentClient) Prompt(context.Context, string, string, ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	return c.promptHandle, nil
 }
 
-func (c *fakeAgentClient) PollMessagesAfter(_ context.Context, _ string, _ float64, output agent.MessageOutputOptions) ([]*agent.Message, error) {
+func (c *fakeAgentClient) PollMessagesAfter(_ context.Context, _ string, _ float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	c.pollOutput = output
 	if c.pollMessagesSent {
 		return nil, nil
@@ -680,11 +680,11 @@ func (c *fakeAgentClient) PollMessagesAfter(_ context.Context, _ string, _ float
 	return c.pollMessages, nil
 }
 
-func (c *fakeAgentClient) ListPendingPermissions(context.Context, string) ([]agent.PermissionRequest, error) {
+func (c *fakeAgentClient) ListPendingPermissions(context.Context, string) ([]types.PermissionRequest, error) {
 	return c.pendingPermissions, nil
 }
 
-func (c *fakeAgentClient) ReplyPermission(_ context.Context, sessionID string, requestID string, reply agent.PermissionReply) error {
+func (c *fakeAgentClient) ReplyPermission(_ context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
 	c.replyPermissionCalls++
 	c.replyPermissionSessionID = sessionID
 	c.replyPermissionRequestID = requestID
@@ -692,7 +692,7 @@ func (c *fakeAgentClient) ReplyPermission(_ context.Context, sessionID string, r
 	return nil
 }
 
-func (c *fakeAgentClient) ListPendingQuestions(_ context.Context, sessionID string) ([]agent.QuestionRequest, error) {
+func (c *fakeAgentClient) ListPendingQuestions(_ context.Context, sessionID string) ([]types.QuestionRequest, error) {
 	c.listPendingQuestionsSessionID = sessionID
 	return c.pendingQuestions, nil
 }

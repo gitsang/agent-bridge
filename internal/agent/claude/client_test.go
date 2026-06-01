@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 func TestClientPromptAggregatesStreamJSONAndResumesSession(t *testing.T) {
@@ -22,11 +22,11 @@ func TestClientPromptAggregatesStreamJSONAndResumesSession(t *testing.T) {
 		}, "\n"))}, nil
 	}))
 
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
-	handle, err := client.Prompt(context.Background(), session.ID, "hello", agent.PromptWithDirectory("/tmp/project"), agent.PromptWithModel(agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}))
+	handle, err := client.Prompt(context.Background(), session.ID, "hello", types.PromptWithDirectory("/tmp/project"), types.PromptWithModel(types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}))
 	if err != nil {
 		t.Fatalf("Prompt() error = %v", err)
 	}
@@ -41,7 +41,7 @@ func TestClientPromptAggregatesStreamJSONAndResumesSession(t *testing.T) {
 		t.Fatalf("process directory = %q, want %q", got, want)
 	}
 
-	messages, err := client.PollMessagesAfter(context.Background(), session.ID, 0, agent.MessageOutputOptions{})
+	messages, err := client.PollMessagesAfter(context.Background(), session.ID, 0, types.MessageOutputOptions{})
 	if err != nil {
 		t.Fatalf("PollMessagesAfter() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestClientPromptAggregatesStreamJSONAndResumesSession(t *testing.T) {
 	if got, want := messages[0].Content, "hello world"; got != want {
 		t.Fatalf("message content = %q, want %q", got, want)
 	}
-	if got, want := messages[0].Model, (agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
+	if got, want := messages[0].Model, (types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
 		t.Fatalf("message model = %#v, want %#v", got, want)
 	}
 
@@ -89,7 +89,7 @@ func TestClientListAndResolveModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
-	if got, want := ref, (agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
+	if got, want := ref, (types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
 		t.Fatalf("ResolveModel() = %#v, want %#v", got, want)
 	}
 
@@ -97,7 +97,7 @@ func TestClientListAndResolveModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveModel() alias error = %v", err)
 	}
-	if got, want := ref, (agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
+	if got, want := ref, (types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}); got != want {
 		t.Fatalf("ResolveModel() alias = %#v, want %#v", got, want)
 	}
 
@@ -105,7 +105,7 @@ func TestClientListAndResolveModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveModel() full id error = %v", err)
 	}
-	if got, want := ref, (agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "claude-sonnet-4-6"}); got != want {
+	if got, want := ref, (types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "claude-sonnet-4-6"}); got != want {
 		t.Fatalf("ResolveModel() full id = %#v, want %#v", got, want)
 	}
 
@@ -122,7 +122,7 @@ func TestClientSessionListGetMessagesAndCursor(t *testing.T) {
 		}, "\n"))}, nil
 	}))
 
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Title: "demo", Directory: "/tmp/project"})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -165,14 +165,14 @@ func TestClientSessionListGetMessagesAndCursor(t *testing.T) {
 		t.Fatalf("message roles = %s/%s, want user/assistant", messages[0].Role, messages[1].Role)
 	}
 
-	polled, err := client.PollMessagesAfter(context.Background(), session.ID, 0, agent.MessageOutputOptions{})
+	polled, err := client.PollMessagesAfter(context.Background(), session.ID, 0, types.MessageOutputOptions{})
 	if err != nil {
 		t.Fatalf("PollMessagesAfter() error = %v", err)
 	}
 	if got, want := len(polled), 1; got != want {
 		t.Fatalf("polled count = %d, want %d", got, want)
 	}
-	polled, err = client.PollMessagesAfter(context.Background(), session.ID, polled[0].CompletedAt, agent.MessageOutputOptions{})
+	polled, err = client.PollMessagesAfter(context.Background(), session.ID, polled[0].CompletedAt, types.MessageOutputOptions{})
 	if err != nil {
 		t.Fatalf("PollMessagesAfter() cursor error = %v", err)
 	}
@@ -200,7 +200,7 @@ func TestClientPromptProcessError(t *testing.T) {
 	client := NewClient(WithProcessFactory(func(context.Context, ProcessRequest) (Process, error) {
 		return &fakeProcess{stdout: strings.NewReader(""), waitErr: io.ErrUnexpectedEOF}, nil
 	}))
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -224,7 +224,7 @@ func TestClientPromptStreamError(t *testing.T) {
 	client := NewClient(WithProcessFactory(func(context.Context, ProcessRequest) (Process, error) {
 		return &fakeProcess{stdout: strings.NewReader(`{"type":"error","session_id":"session-1","error":{"message":"auth failed"}}` + "\n")}, nil
 	}))
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -284,7 +284,7 @@ func TestClientConcurrentPromptReturnsBusy(t *testing.T) {
 	client := NewClient(WithProcessFactory(func(_ context.Context, request ProcessRequest) (Process, error) {
 		return &fakeProcess{stdout: reader, waitCh: waitCh}, nil
 	}))
-	session, err := client.CreateSession(context.Background(), agent.CreateSessionRequest{})
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{})
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
@@ -320,7 +320,7 @@ func (p *fakeProcess) Wait() error {
 
 func (p *fakeProcess) Kill() error { return nil }
 
-func waitDone(t *testing.T, handle *agent.PromptHandle) {
+func waitDone(t *testing.T, handle *types.PromptHandle) {
 	t.Helper()
 	select {
 	case <-handle.Done():

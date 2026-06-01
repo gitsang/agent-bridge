@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 const ClaudeProviderID = "claude"
@@ -64,7 +65,7 @@ type sessionState struct {
 	ID        string
 	Title     string
 	Directory string
-	Model     agent.ModelRef
+	Model     types.ModelRef
 	Turns     map[string]*turnState
 	Running   bool
 	Started   bool
@@ -77,7 +78,7 @@ type turnState struct {
 	UserContent string
 	CompletedAt float64
 	Answer      strings.Builder
-	Model       agent.ModelRef
+	Model       types.ModelRef
 	Err         error
 }
 
@@ -145,53 +146,53 @@ func NewClient(options ...Option) *Client {
 	}
 }
 
-func (c *Client) ListModels(context.Context, string) ([]agent.ModelInfo, error) {
-	return []agent.ModelInfo{
-		{ModelRef: agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "haiku"}, ProviderName: "Claude", ModelName: "Claude Haiku"},
-		{ModelRef: agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "opus"}, ProviderName: "Claude", ModelName: "Claude Opus"},
-		{ModelRef: agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}, ProviderName: "Claude", ModelName: "Claude Sonnet"},
+func (c *Client) ListModels(context.Context, string) ([]types.ModelInfo, error) {
+	return []types.ModelInfo{
+		{ModelRef: types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "haiku"}, ProviderName: "Claude", ModelName: "Claude Haiku"},
+		{ModelRef: types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "opus"}, ProviderName: "Claude", ModelName: "Claude Opus"},
+		{ModelRef: types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}, ProviderName: "Claude", ModelName: "Claude Sonnet"},
 	}, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agent.ModelRef, error) {
+func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
-		return agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}, nil
+		return types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}, nil
 	}
 	if strings.Contains(resolvedModel, "/") {
 		pair := strings.SplitN(resolvedModel, "/", 2)
 		providerID := strings.TrimSpace(pair[0])
 		modelID := strings.TrimSpace(pair[1])
 		if modelID == "" {
-			return agent.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
+			return types.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
 		}
 		if providerID != "" && !strings.EqualFold(providerID, ClaudeProviderID) {
-			return agent.ModelRef{}, fmt.Errorf("unsupported claude model provider: %s", providerID)
+			return types.ModelRef{}, fmt.Errorf("unsupported claude model provider: %s", providerID)
 		}
-		return agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: modelID}, nil
+		return types.ModelRef{ProviderID: ClaudeProviderID, ModelID: modelID}, nil
 	}
 	models, err := c.ListModels(ctx, directory)
 	if err != nil {
-		return agent.ModelRef{}, err
+		return types.ModelRef{}, err
 	}
 	for _, candidate := range models {
 		if strings.EqualFold(candidate.ModelID, resolvedModel) {
 			return candidate.ModelRef, nil
 		}
 	}
-	return agent.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
+	return types.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 }
 
-func (c *Client) ListAgents(context.Context, string) ([]agent.AgentInfo, error) {
-	return []agent.AgentInfo{{Name: "claude-code", Description: "Claude Code coding agent", Mode: "default"}}, nil
+func (c *Client) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
+	return []types.AgentInfo{{Name: "claude-code", Description: "Claude Code coding agent", Mode: "default"}}, nil
 }
 
-func (c *Client) ListSessions(context.Context, string) ([]agent.Session, error) {
+func (c *Client) ListSessions(context.Context, string) ([]types.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	sessions := make([]agent.Session, 0, len(c.sessions))
+	sessions := make([]types.Session, 0, len(c.sessions))
 	for _, state := range c.sessions {
-		sessions = append(sessions, agent.Session{
+		sessions = append(sessions, types.Session{
 			ID:        state.ID,
 			Title:     state.Title,
 			Directory: state.Directory,
@@ -202,11 +203,11 @@ func (c *Client) ListSessions(context.Context, string) ([]agent.Session, error) 
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
+func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	return c.ListSessions(ctx, "")
 }
 
-func (c *Client) GetSession(_ context.Context, sessionID string) (*agent.Session, error) {
+func (c *Client) GetSession(_ context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -215,9 +216,9 @@ func (c *Client) GetSession(_ context.Context, sessionID string) (*agent.Session
 	defer c.mu.Unlock()
 	state := c.sessions[resolvedSessionID]
 	if state == nil {
-		return &agent.Session{ID: resolvedSessionID}, nil
+		return &types.Session{ID: resolvedSessionID}, nil
 	}
-	session := agent.Session{
+	session := types.Session{
 		ID:        state.ID,
 		Title:     state.Title,
 		Directory: state.Directory,
@@ -226,7 +227,7 @@ func (c *Client) GetSession(_ context.Context, sessionID string) (*agent.Session
 	return &session, nil
 }
 
-func (c *Client) CreateSession(_ context.Context, request agent.CreateSessionRequest) (*agent.Session, error) {
+func (c *Client) CreateSession(_ context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	sessionID, err := newSessionID()
 	if err != nil {
 		return nil, err
@@ -242,7 +243,7 @@ func (c *Client) CreateSession(_ context.Context, request agent.CreateSessionReq
 	c.mu.Lock()
 	c.sessions[session.ID] = session
 	c.mu.Unlock()
-	return &agent.Session{
+	return &types.Session{
 		ID:        session.ID,
 		Title:     session.Title,
 		Directory: session.Directory,
@@ -250,7 +251,7 @@ func (c *Client) CreateSession(_ context.Context, request agent.CreateSessionReq
 	}, nil
 }
 
-func (c *Client) GetMessages(_ context.Context, sessionID string) ([]agent.Message, error) {
+func (c *Client) GetMessages(_ context.Context, sessionID string) ([]types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -262,17 +263,17 @@ func (c *Client) GetMessages(_ context.Context, sessionID string) ([]agent.Messa
 		return nil, nil
 	}
 	turns := sortedTurns(state.Turns)
-	messages := make([]agent.Message, 0, len(turns)*2)
+	messages := make([]types.Message, 0, len(turns)*2)
 	for _, turn := range turns {
-		messages = append(messages, agent.Message{ID: turn.ID + ":user", SessionID: resolvedSessionID, Role: "user", Content: turn.UserContent, CompletedAt: turn.CompletedAt, Model: turn.Model})
+		messages = append(messages, types.Message{ID: turn.ID + ":user", SessionID: resolvedSessionID, Role: "user", Content: turn.UserContent, CompletedAt: turn.CompletedAt, Model: turn.Model})
 		if strings.TrimSpace(turn.Answer.String()) != "" {
-			messages = append(messages, agent.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: strings.TrimSpace(turn.Answer.String()), CompletedAt: turn.CompletedAt, Model: turn.Model})
+			messages = append(messages, types.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: strings.TrimSpace(turn.Answer.String()), CompletedAt: turn.CompletedAt, Model: turn.Model})
 		}
 	}
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(_ context.Context, sessionID string) (*agent.Message, error) {
+func (c *Client) GetLatestAssistantMessage(_ context.Context, sessionID string) (*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -283,20 +284,20 @@ func (c *Client) GetLatestAssistantMessage(_ context.Context, sessionID string) 
 	if state == nil {
 		return nil, nil
 	}
-	var latest *agent.Message
+	var latest *types.Message
 	for _, turn := range state.Turns {
 		content := strings.TrimSpace(turn.Answer.String())
 		if content == "" || turn.CompletedAt <= 0 {
 			continue
 		}
 		if latest == nil || turn.CompletedAt > latest.CompletedAt {
-			latest = &agent.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: content, CompletedAt: turn.CompletedAt, Model: turn.Model}
+			latest = &types.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: content, CompletedAt: turn.CompletedAt, Model: turn.Model}
 		}
 	}
 	return latest, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -305,7 +306,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	if content == "" {
 		return nil, fmt.Errorf("message content is required")
 	}
-	options := agent.PromptOptions{}
+	options := types.PromptOptions{}
 	for _, apply := range optfs {
 		if apply != nil {
 			apply(&options)
@@ -343,10 +344,10 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	doneCh := make(chan struct{})
 	errCh := make(chan error, 1)
 	go c.runPrompt(ctx, resolvedSessionID, turnID, content, directory, model, firstPrompt, doneCh, errCh)
-	return agent.NewPromptHandle(doneCh, errCh), nil
+	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output agent.MessageOutputOptions) ([]*agent.Message, error) {
+func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -358,7 +359,7 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 		return nil, nil
 	}
 	turns := sortedTurns(state.Turns)
-	messages := make([]*agent.Message, 0, len(turns))
+	messages := make([]*types.Message, 0, len(turns))
 	for _, turn := range turns {
 		if turn.CompletedAt <= afterCompletedAt {
 			continue
@@ -367,32 +368,32 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
-		messages = append(messages, &agent.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: content, CompletedAt: turn.CompletedAt, Model: turn.Model})
+		messages = append(messages, &types.Message{ID: turn.ID, SessionID: resolvedSessionID, Role: "assistant", Content: content, CompletedAt: turn.CompletedAt, Model: turn.Model})
 	}
 	return messages, nil
 }
 
-func (c *Client) ListPendingPermissions(context.Context, string) ([]agent.PermissionRequest, error) {
-	return []agent.PermissionRequest{}, nil
+func (c *Client) ListPendingPermissions(context.Context, string) ([]types.PermissionRequest, error) {
+	return []types.PermissionRequest{}, nil
 }
 
-func (c *Client) ReplyPermission(context.Context, string, string, agent.PermissionReply) error {
-	return agent.ErrInteractionNoLongerPending
+func (c *Client) ReplyPermission(context.Context, string, string, types.PermissionReply) error {
+	return types.ErrInteractionNoLongerPending
 }
 
-func (c *Client) ListPendingQuestions(context.Context, string) ([]agent.QuestionRequest, error) {
-	return []agent.QuestionRequest{}, nil
+func (c *Client) ListPendingQuestions(context.Context, string) ([]types.QuestionRequest, error) {
+	return []types.QuestionRequest{}, nil
 }
 
 func (c *Client) ReplyQuestion(context.Context, string, string, [][]string) error {
-	return agent.ErrInteractionNoLongerPending
+	return types.ErrInteractionNoLongerPending
 }
 
 func (c *Client) RejectQuestion(context.Context, string, string) error {
-	return agent.ErrInteractionNoLongerPending
+	return types.ErrInteractionNoLongerPending
 }
 
-func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, directory string, model agent.ModelRef, firstPrompt bool, doneCh chan struct{}, errCh chan error) {
+func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, directory string, model types.ModelRef, firstPrompt bool, doneCh chan struct{}, errCh chan error) {
 	startedAt := time.Now()
 	var finalErr error
 	defer func() {
@@ -476,7 +477,7 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 	close(doneCh)
 }
 
-func (c *Client) buildArgs(sessionID, content string, model agent.ModelRef, firstPrompt bool) []string {
+func (c *Client) buildArgs(sessionID, content string, model types.ModelRef, firstPrompt bool) []string {
 	args := append([]string(nil), c.args...)
 	if strings.TrimSpace(sessionID) != "" {
 		if firstPrompt {
@@ -623,7 +624,7 @@ func (c *Client) updateTurnModel(sessionID, turnID, modelID string) {
 	defer c.mu.Unlock()
 	turn := c.turnLocked(sessionID, turnID)
 	if turn != nil {
-		turn.Model = agent.ModelRef{ProviderID: ClaudeProviderID, ModelID: strings.TrimSpace(modelID)}
+		turn.Model = types.ModelRef{ProviderID: ClaudeProviderID, ModelID: strings.TrimSpace(modelID)}
 	}
 }
 
@@ -635,9 +636,9 @@ func (c *Client) turnLocked(sessionID, turnID string) *turnState {
 	return state.Turns[turnID]
 }
 
-func (t *turnState) render(output agent.MessageOutputOptions) string {
+func (t *turnState) render(output types.MessageOutputOptions) string {
 	builder := strings.Builder{}
-	if output.Includes(agent.MessageContentAnswer) && t.Answer.Len() > 0 {
+	if output.Includes(types.MessageContentAnswer) && t.Answer.Len() > 0 {
 		builder.WriteString("\n" + strings.TrimSpace(t.Answer.String()))
 	}
 	return strings.TrimSpace(builder.String())

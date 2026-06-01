@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 type ParsedInput struct {
@@ -205,7 +205,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Agent.SessionID), strings.TrimSpace(state.AgentSessionID))
 
 	if resolvedSessionID == "" {
-		createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{
+		createdSession, err := c.agentClient.CreateSession(ctx, types.CreateSessionRequest{
 			Title:     strings.TrimSpace(req.Agent.Title),
 			Directory: resolvedDirectory,
 		})
@@ -226,7 +226,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		afterCompletedAt = latest.CompletedAt
 	}
 
-	var resolvedModelRef agent.ModelRef
+	var resolvedModelRef types.ModelRef
 	if resolvedModelSpec != "" {
 		ref, err := c.agentClient.ResolveModel(ctx, resolvedModelSpec, resolvedDirectory)
 		if err != nil {
@@ -235,15 +235,15 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		resolvedModelRef = ref
 	}
 
-	optfs := make([]agent.PromptOptionFunc, 0, 3)
+	optfs := make([]types.PromptOptionFunc, 0, 3)
 	if resolvedDirectory != "" {
-		optfs = append(optfs, agent.PromptWithDirectory(resolvedDirectory))
+		optfs = append(optfs, types.PromptWithDirectory(resolvedDirectory))
 	}
 	if resolvedAgent != "" {
-		optfs = append(optfs, agent.PromptWithAgent(resolvedAgent))
+		optfs = append(optfs, types.PromptWithAgent(resolvedAgent))
 	}
 	if !resolvedModelRef.IsZero() {
-		optfs = append(optfs, agent.PromptWithModel(resolvedModelRef))
+		optfs = append(optfs, types.PromptWithModel(resolvedModelRef))
 	}
 
 	// Prepend user identity to prompt if configured
@@ -273,7 +273,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	var lastResult *agent.Message
+	var lastResult *types.Message
 	deliveredInteractions := map[string]struct{}{}
 
 	for {
@@ -325,7 +325,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	}
 }
 
-func advanceCompletedCursor(current float64, msg *agent.Message) float64 {
+func advanceCompletedCursor(current float64, msg *types.Message) float64 {
 	if msg == nil || msg.CompletedAt <= current {
 		return current
 	}
@@ -405,7 +405,7 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 	agentName := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
-	createdSession, err := c.agentClient.CreateSession(ctx, agent.CreateSessionRequest{Title: title, Directory: directory})
+	createdSession, err := c.agentClient.CreateSession(ctx, types.CreateSessionRequest{Title: title, Directory: directory})
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -468,7 +468,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 
 		resolvedDirectory := ""
 		resolvedTitle := ""
-		var lastModel agent.ModelRef
+		var lastModel types.ModelRef
 		if session != nil {
 			resolvedDirectory = strings.TrimSpace(session.Directory)
 			resolvedTitle = strings.TrimSpace(session.Title)
@@ -693,8 +693,8 @@ func (c *AgentBridge) handlePermissionCommand(ctx context.Context, req *Message,
 		return nil, NewError(http.StatusBadRequest, "usage: /permission <once|always|reject> [id|index]")
 	}
 
-	reply := agent.PermissionReply(strings.ToLower(strings.TrimSpace(invocation.Positionals[1])))
-	if reply != agent.PermissionReplyOnce && reply != agent.PermissionReplyAlways && reply != agent.PermissionReplyReject {
+	reply := types.PermissionReply(strings.ToLower(strings.TrimSpace(invocation.Positionals[1])))
+	if reply != types.PermissionReplyOnce && reply != types.PermissionReplyAlways && reply != types.PermissionReplyReject {
 		return nil, NewError(http.StatusBadRequest, "permission reply must be once, always, or reject")
 	}
 
@@ -718,7 +718,7 @@ func (c *AgentBridge) handlePermissionCommand(ctx context.Context, req *Message,
 	}
 
 	if err := c.agentClient.ReplyPermission(ctx, sessionID, target.ID, reply); err != nil {
-		if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+		if errors.Is(err, types.ErrInteractionNoLongerPending) {
 			return &Message{Content: fmt.Sprintf("Permission request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 		}
 		return nil, NewError(http.StatusBadGateway, err.Error())
@@ -766,12 +766,12 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
 		if err := c.agentClient.RejectQuestion(ctx, targetSessionID, target.ID); err != nil {
-			if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+			if errors.Is(err, types.ErrInteractionNoLongerPending) {
 				return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 			}
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
-		c.logger.Info("question request rejected",
+		c.logger.Info("Question request rejected",
 			"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
 			"agent_session_id", targetSessionID,
 			"request_id", target.ID,
@@ -809,13 +809,13 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
 	if err := c.agentClient.ReplyQuestion(ctx, targetSessionID, target.ID, answers); err != nil {
-		if errors.Is(err, agent.ErrInteractionNoLongerPending) {
+		if errors.Is(err, types.ErrInteractionNoLongerPending) {
 			return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 		}
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
 
-	c.logger.Info("question request answered",
+	c.logger.Info("Question request answered",
 		"chat_session_id", strings.TrimSpace(req.Chat.SessionID),
 		"agent_session_id", targetSessionID,
 		"request_id", target.ID,
@@ -847,14 +847,14 @@ func normalizeInteractionID(value string) string {
 	}, strings.TrimSpace(value))
 }
 
-func resolveQuestionRequestSessionID(fallback string, request agent.QuestionRequest) (string, error) {
+func resolveQuestionRequestSessionID(fallback string, request types.QuestionRequest) (string, error) {
 	resolved := strings.TrimSpace(fallback)
 	if resolved != "" {
 		return resolved, nil
 	}
 	resolved = strings.TrimSpace(request.SessionID)
 	if resolved == "" {
-		return "", fmt.Errorf("question request session id is required")
+		return "", fmt.Errorf("Question request session id is required")
 	}
 	return resolved, nil
 }
@@ -884,15 +884,15 @@ func (c *AgentBridge) resolveInteractionSessionID(req *Message) (string, error) 
 	return strings.TrimSpace(state.AgentSessionID), nil
 }
 
-func selectPermissionRequest(requests []agent.PermissionRequest, targetToken string) (agent.PermissionRequest, string, error) {
+func selectPermissionRequest(requests []types.PermissionRequest, targetToken string) (types.PermissionRequest, string, error) {
 	if len(requests) == 0 {
-		return agent.PermissionRequest{}, "No pending permission requests", fmt.Errorf("no pending permission requests")
+		return types.PermissionRequest{}, "No pending permission requests", fmt.Errorf("no pending permission requests")
 	}
 	if strings.TrimSpace(targetToken) == "" {
 		if len(requests) == 1 {
 			return requests[0], "", nil
 		}
-		return agent.PermissionRequest{}, formatPendingPermissions("Multiple pending permission requests; include an id or index:", requests), fmt.Errorf("permission target required")
+		return types.PermissionRequest{}, formatPendingPermissions("Multiple pending permission requests; include an id or index:", requests), fmt.Errorf("permission target required")
 	}
 
 	if index, ok := parseInteractionIndex(targetToken, len(requests)); ok {
@@ -903,18 +903,18 @@ func selectPermissionRequest(requests []agent.PermissionRequest, targetToken str
 			return request, "", nil
 		}
 	}
-	return agent.PermissionRequest{}, fmt.Sprintf("Permission request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("permission request not found")
+	return types.PermissionRequest{}, fmt.Sprintf("Permission request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("permission request not found")
 }
 
-func selectQuestionRequest(requests []agent.QuestionRequest, targetToken string) (agent.QuestionRequest, string, error) {
+func selectQuestionRequest(requests []types.QuestionRequest, targetToken string) (types.QuestionRequest, string, error) {
 	if len(requests) == 0 {
-		return agent.QuestionRequest{}, "No pending question requests", fmt.Errorf("no pending question requests")
+		return types.QuestionRequest{}, "No pending question requests", fmt.Errorf("no pending Question requests")
 	}
 	if strings.TrimSpace(targetToken) == "" {
 		if len(requests) == 1 {
 			return requests[0], "", nil
 		}
-		return agent.QuestionRequest{}, formatPendingQuestions("Multiple pending question requests; include an id or index:", requests), fmt.Errorf("question target required")
+		return types.QuestionRequest{}, formatPendingQuestions("Multiple pending question requests; include an id or index:", requests), fmt.Errorf("question target required")
 	}
 
 	if index, ok := parseInteractionIndex(targetToken, len(requests)); ok {
@@ -926,7 +926,7 @@ func selectQuestionRequest(requests []agent.QuestionRequest, targetToken string)
 			return request, "", nil
 		}
 	}
-	return agent.QuestionRequest{}, fmt.Sprintf("Question request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("question request not found")
+	return types.QuestionRequest{}, fmt.Sprintf("Question request no longer pending: %s", strings.TrimSpace(targetToken)), fmt.Errorf("Question request not found")
 }
 
 func parseInteractionIndex(token string, length int) (int, bool) {
@@ -937,14 +937,14 @@ func parseInteractionIndex(token string, length int) (int, bool) {
 	return index - 1, true
 }
 
-func matchesQuestionTarget(requests []agent.QuestionRequest, token string) bool {
+func matchesQuestionTarget(requests []types.QuestionRequest, token string) bool {
 	if _, ok := parseInteractionIndex(token, len(requests)); ok {
 		return true
 	}
 	return questionRequestIDMatches(requests, token)
 }
 
-func questionRequestIDMatches(requests []agent.QuestionRequest, token string) bool {
+func questionRequestIDMatches(requests []types.QuestionRequest, token string) bool {
 	resolvedToken := normalizeInteractionID(token)
 	for _, request := range requests {
 		if normalizeInteractionID(request.ID) == resolvedToken {
@@ -954,7 +954,7 @@ func questionRequestIDMatches(requests []agent.QuestionRequest, token string) bo
 	return false
 }
 
-func buildQuestionAnswers(request agent.QuestionRequest, tokens []string) ([][]string, error) {
+func buildQuestionAnswers(request types.QuestionRequest, tokens []string) ([][]string, error) {
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("question answer is required")
 	}
@@ -985,7 +985,7 @@ func buildQuestionAnswers(request agent.QuestionRequest, tokens []string) ([][]s
 	return answers, nil
 }
 
-func resolveSingleQuestionAnswers(question agent.Question, tokens []string) []string {
+func resolveSingleQuestionAnswers(question types.Question, tokens []string) []string {
 	if len(question.Options) == 0 {
 		joined := strings.TrimSpace(strings.Join(tokens, " "))
 		if joined == "" {
@@ -996,7 +996,7 @@ func resolveSingleQuestionAnswers(question agent.Question, tokens []string) []st
 	return resolveQuestionTokens(question, tokens)
 }
 
-func resolveQuestionTokens(question agent.Question, tokens []string) []string {
+func resolveQuestionTokens(question types.Question, tokens []string) []string {
 	answers := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		trimmed := strings.TrimSpace(token)
@@ -1019,7 +1019,7 @@ func resolveQuestionTokens(question agent.Question, tokens []string) []string {
 	return []string{joined}
 }
 
-func formatPendingPermissions(header string, requests []agent.PermissionRequest) string {
+func formatPendingPermissions(header string, requests []types.PermissionRequest) string {
 	builder := strings.Builder{}
 	builder.WriteString(header)
 	for index, request := range requests {
@@ -1031,7 +1031,7 @@ func formatPendingPermissions(header string, requests []agent.PermissionRequest)
 	return strings.TrimSpace(builder.String())
 }
 
-func formatPendingQuestions(header string, requests []agent.QuestionRequest) string {
+func formatPendingQuestions(header string, requests []types.QuestionRequest) string {
 	builder := strings.Builder{}
 	builder.WriteString(header)
 	for index, request := range requests {
@@ -1043,7 +1043,7 @@ func formatPendingQuestions(header string, requests []agent.QuestionRequest) str
 	return strings.TrimSpace(builder.String())
 }
 
-func formatPermissionRequest(index int, request agent.PermissionRequest) string {
+func formatPermissionRequest(index int, request types.PermissionRequest) string {
 	builder := strings.Builder{}
 	fmt.Fprintf(&builder, "Permission request %d: %s", index, strings.TrimSpace(request.ID))
 	if strings.TrimSpace(request.Permission) != "" {
@@ -1059,14 +1059,14 @@ func formatPermissionRequest(index int, request agent.PermissionRequest) string 
 	return strings.TrimSpace(builder.String())
 }
 
-func formatQuestionRequest(index int, request agent.QuestionRequest) string {
+func formatQuestionRequest(index int, request types.QuestionRequest) string {
 	builder := strings.Builder{}
 	requestID := strings.TrimSpace(request.ID)
 	fmt.Fprintf(&builder, "Question request %d: %s", index, requestID)
 	for questionIndex, question := range request.Questions {
 		questionText := strings.TrimSpace(question.Text)
 		if len(request.Questions) > 1 {
-			fmt.Fprintf(&builder, "\n\nQuestion %d: %s", questionIndex+1, questionText)
+			fmt.Fprintf(&builder, "\n\ntypes.Question %d: %s", questionIndex+1, questionText)
 		} else {
 			fmt.Fprintf(&builder, "\n\n%s", questionText)
 		}
@@ -1210,9 +1210,9 @@ func (c *AgentBridge) listAllSessions(ctx context.Context, activeOnly ...bool) (
 	return strings.TrimSpace(builder.String()), nil
 }
 
-func filterSessionsByActivity(sessions []agent.Session) []agent.Session {
+func filterSessionsByActivity(sessions []types.Session) []types.Session {
 	cutoff := time.Now().Add(-24 * time.Hour)
-	active := make([]agent.Session, 0, len(sessions))
+	active := make([]types.Session, 0, len(sessions))
 	for _, session := range sessions {
 		if session.UpdatedAt.After(cutoff) {
 			active = append(active, session)

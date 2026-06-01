@@ -4,26 +4,30 @@ import (
 	"context"
 	"sync"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
+
+type AgentModelLister interface {
+	ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error)
+}
 
 type Cache struct {
 	mu      sync.RWMutex
-	entries map[agent.ModelRef]agent.ModelInfo
+	entries map[types.ModelRef]types.ModelInfo
 }
 
 func New() *Cache {
-	return &Cache{entries: map[agent.ModelRef]agent.ModelInfo{}}
+	return &Cache{entries: map[types.ModelRef]types.ModelInfo{}}
 }
 
-func (c *Cache) lookup(ref agent.ModelRef) (agent.ModelInfo, bool) {
+func (c *Cache) lookup(ref types.ModelRef) (types.ModelInfo, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	info, ok := c.entries[ref]
 	return info, ok
 }
 
-func (c *Cache) refresh(ctx context.Context, client agent.Client, directory string) error {
+func (c *Cache) refresh(ctx context.Context, client AgentModelLister, directory string) error {
 	models, err := client.ListModels(ctx, directory)
 	if err != nil {
 		return err
@@ -36,7 +40,7 @@ func (c *Cache) refresh(ctx context.Context, client agent.Client, directory stri
 	return nil
 }
 
-func (c *Cache) Humanize(ctx context.Context, ref agent.ModelRef, client agent.Client, directory string) string {
+func (c *Cache) Humanize(ctx context.Context, ref types.ModelRef, client AgentModelLister, directory string) string {
 	if ref.IsZero() {
 		return ""
 	}

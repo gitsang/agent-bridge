@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 type Config struct {
@@ -16,7 +16,7 @@ type Config struct {
 	Platforms map[string]any `mapstructure:"platforms"`
 	Agent   struct {
 		Driver        string                     `default:"opencode" usage:"agent driver" mapstructure:"driver"`
-		MessageOutput agent.MessageOutputOptions `default:"{}" usage:"agent message output options" mapstructure:"message_output"`
+		MessageOutput types.MessageOutputOptions `default:"{}" usage:"agent message output options" mapstructure:"message_output"`
 		Opencode      struct {
 			BaseURL  string        `default:"http://127.0.0.1:4096" usage:"opencode agent server base URL" mapstructure:"base_url"`
 			Username string        `default:"agent" usage:"opencode agent server username" mapstructure:"username"`

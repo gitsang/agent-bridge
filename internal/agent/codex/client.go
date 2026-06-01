@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 const CodexProviderID = "codex"
@@ -59,14 +60,14 @@ type sessionState struct {
 	ID        string
 	Title     string
 	Directory string
-	Model     agent.ModelRef
+	Model     types.ModelRef
 	Turns     map[string]*turnState
 }
 
 type turnState struct {
 	ID          string
 	SessionID   string
-	Model       agent.ModelRef
+	Model       types.ModelRef
 	CompletedAt float64
 	Status      string
 	Answer      strings.Builder
@@ -80,13 +81,13 @@ type turnState struct {
 }
 
 type pendingPermission struct {
-	request agent.PermissionRequest
+	request types.PermissionRequest
 	rpcID   json.RawMessage
 	kind    string
 }
 
 type pendingQuestion struct {
-	request     agent.QuestionRequest
+	request     types.QuestionRequest
 	rpcID       json.RawMessage
 	questionIDs []string
 }
@@ -177,7 +178,7 @@ func NewClient(options ...Option) *Client {
 	}
 }
 
-func (c *Client) ListModels(ctx context.Context, _ string) ([]agent.ModelInfo, error) {
+func (c *Client) ListModels(ctx context.Context, _ string) ([]types.ModelInfo, error) {
 	var resp struct {
 		Data []struct {
 			ID          string `json:"id"`
@@ -189,14 +190,14 @@ func (c *Client) ListModels(ctx context.Context, _ string) ([]agent.ModelInfo, e
 	if err := c.call(ctx, "model/list", map[string]any{"includeHidden": true}, &resp); err != nil {
 		return nil, err
 	}
-	models := make([]agent.ModelInfo, 0, len(resp.Data))
+	models := make([]types.ModelInfo, 0, len(resp.Data))
 	for _, item := range resp.Data {
 		modelID := firstNonEmpty(item.Model, item.ID)
 		if modelID == "" {
 			continue
 		}
-		models = append(models, agent.ModelInfo{
-			ModelRef:     agent.ModelRef{ProviderID: CodexProviderID, ModelID: modelID},
+		models = append(models, types.ModelInfo{
+			ModelRef:     types.ModelRef{ProviderID: CodexProviderID, ModelID: modelID},
 			ProviderName: "Codex",
 			ModelName:    firstNonEmpty(item.DisplayName, modelID),
 		})
@@ -205,41 +206,41 @@ func (c *Client) ListModels(ctx context.Context, _ string) ([]agent.ModelInfo, e
 	return models, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agent.ModelRef, error) {
+func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
-		return agent.ModelRef{}, fmt.Errorf("model is required")
+		return types.ModelRef{}, fmt.Errorf("model is required")
 	}
 	if strings.Contains(resolvedModel, "/") {
 		pair := strings.SplitN(resolvedModel, "/", 2)
 		providerID := strings.TrimSpace(pair[0])
 		modelID := strings.TrimSpace(pair[1])
 		if modelID == "" {
-			return agent.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
+			return types.ModelRef{}, fmt.Errorf("invalid model format: %s", resolvedModel)
 		}
 		if providerID != "" && !strings.EqualFold(providerID, CodexProviderID) {
-			return agent.ModelRef{}, fmt.Errorf("unsupported codex model provider: %s", providerID)
+			return types.ModelRef{}, fmt.Errorf("unsupported codex model provider: %s", providerID)
 		}
-		return agent.ModelRef{ProviderID: CodexProviderID, ModelID: modelID}, nil
+		return types.ModelRef{ProviderID: CodexProviderID, ModelID: modelID}, nil
 	}
 
 	models, err := c.ListModels(ctx, directory)
 	if err != nil {
-		return agent.ModelRef{}, err
+		return types.ModelRef{}, err
 	}
 	for _, candidate := range models {
 		if strings.EqualFold(candidate.ModelID, resolvedModel) {
 			return candidate.ModelRef, nil
 		}
 	}
-	return agent.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
+	return types.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 }
 
-func (c *Client) ListAgents(context.Context, string) ([]agent.AgentInfo, error) {
-	return []agent.AgentInfo{{Name: "codex", Description: "Codex coding agent", Mode: "default"}}, nil
+func (c *Client) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
+	return []types.AgentInfo{{Name: "codex", Description: "Codex coding agent", Mode: "default"}}, nil
 }
 
-func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Session, error) {
+func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
 	params := map[string]any{"limit": 100, "sourceKinds": []string{}}
 	if strings.TrimSpace(directory) != "" {
 		params["cwd"] = strings.TrimSpace(directory)
@@ -250,7 +251,7 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Se
 	if err := c.call(ctx, "thread/list", params, &resp); err != nil {
 		return nil, err
 	}
-	sessions := make([]agent.Session, 0, len(resp.Data))
+	sessions := make([]types.Session, 0, len(resp.Data))
 	for _, thread := range resp.Data {
 		if strings.TrimSpace(thread.ID) == "" {
 			continue
@@ -262,11 +263,11 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]agent.Se
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
+func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	return c.ListSessions(ctx, "")
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Session, error) {
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -274,7 +275,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Sessi
 
 	c.mu.Lock()
 	if state := c.sessions[resolvedSessionID]; state != nil {
-		session := agent.Session{ID: state.ID, Title: state.Title, Directory: state.Directory}
+		session := types.Session{ID: state.ID, Title: state.Title, Directory: state.Directory}
 		c.mu.Unlock()
 		return &session, nil
 	}
@@ -294,7 +295,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*agent.Sessi
 	return &session, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionRequest) (*agent.Session, error) {
+func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	params := map[string]any{"ephemeral": false}
 	if directory := strings.TrimSpace(request.Directory); directory != "" {
 		params["cwd"] = directory
@@ -322,7 +323,7 @@ func (c *Client) CreateSession(ctx context.Context, request agent.CreateSessionR
 	return &session, nil
 }
 
-func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Message, error) {
+func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -333,36 +334,36 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]agent.Mes
 	if err := c.call(ctx, "thread/read", map[string]any{"threadId": resolvedSessionID, "includeTurns": true}, &resp); err != nil {
 		return nil, err
 	}
-	messages := make([]agent.Message, 0)
+	messages := make([]types.Message, 0)
 	for _, turn := range resp.Thread.Turns {
 		for _, item := range turn.Items {
 			itemID, role, content := itemRoleAndContent(item)
 			if role == "" {
 				continue
 			}
-			messages = append(messages, agent.Message{
+			messages = append(messages, types.Message{
 				ID:          firstNonEmpty(itemID, turn.ID),
 				SessionID:   resolvedSessionID,
 				Role:        role,
 				Content:     content,
 				CompletedAt: firstPositive(turn.CompletedAt, turn.StartedAt),
-				Model:       agent.ModelRef{ProviderID: CodexProviderID, ModelID: firstNonEmpty(resp.Thread.Model, resp.Thread.ModelProvider)},
+				Model:       types.ModelRef{ProviderID: CodexProviderID, ModelID: firstNonEmpty(resp.Thread.Model, resp.Thread.ModelProvider)},
 			})
 		}
 	}
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*agent.Message, error) {
+func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
 	c.mu.Lock()
-	var latest *agent.Message
+	var latest *types.Message
 	if state := c.sessions[strings.TrimSpace(sessionID)]; state != nil {
 		for _, turn := range state.Turns {
 			if turn.CompletedAt <= 0 || turn.Answer.Len() == 0 {
 				continue
 			}
 			if latest == nil || turn.CompletedAt > latest.CompletedAt {
-				latest = &agent.Message{
+				latest = &types.Message{
 					ID:          turn.ID,
 					SessionID:   turn.SessionID,
 					Role:        "assistant",
@@ -395,7 +396,7 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 	return nil, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -404,7 +405,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	if resolvedContent == "" {
 		return nil, fmt.Errorf("message content is required")
 	}
-	resolvedOptions := agent.PromptOptions{}
+	resolvedOptions := types.PromptOptions{}
 	for _, apply := range optfs {
 		if apply != nil {
 			apply(&resolvedOptions)
@@ -414,10 +415,10 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	doneCh := make(chan struct{})
 	errCh := make(chan error, 1)
 	c.runPrompt(ctx, resolvedSessionID, resolvedContent, resolvedOptions, doneCh, errCh)
-	return agent.NewPromptHandle(doneCh, errCh), nil
+	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) runPrompt(ctx context.Context, sessionID, content string, options agent.PromptOptions, doneCh chan struct{}, errCh chan error) {
+func (c *Client) runPrompt(ctx context.Context, sessionID, content string, options types.PromptOptions, doneCh chan struct{}, errCh chan error) {
 	promptCtx := ctx
 	var cancel context.CancelFunc
 	if c.timeout > 0 {
@@ -485,7 +486,7 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, content string, optio
 	}()
 }
 
-func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output agent.MessageOutputOptions) ([]*agent.Message, error) {
+func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -504,13 +505,13 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 	}
 	sort.Slice(turns, func(i, j int) bool { return turns[i].CompletedAt < turns[j].CompletedAt })
 
-	messages := make([]*agent.Message, 0, len(turns))
+	messages := make([]*types.Message, 0, len(turns))
 	for _, turn := range turns {
 		content := turn.extractContent(output)
 		if content.Answer == "" && content.Reasoning == "" && content.Tools == "" && content.Patches == "" && content.Diagnostics == "" {
 			continue
 		}
-		messages = append(messages, &agent.Message{
+		messages = append(messages, &types.Message{
 			ID:          turn.ID,
 			SessionID:   turn.SessionID,
 			Role:        "assistant",
@@ -526,11 +527,11 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 	return messages, nil
 }
 
-func (c *Client) ListPendingPermissions(_ context.Context, sessionID string) ([]agent.PermissionRequest, error) {
+func (c *Client) ListPendingPermissions(_ context.Context, sessionID string) ([]types.PermissionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	requests := make([]agent.PermissionRequest, 0, len(c.pendingPerm))
+	requests := make([]types.PermissionRequest, 0, len(c.pendingPerm))
 	for _, pending := range c.pendingPerm {
 		if resolvedSessionID != "" && pending.request.SessionID != resolvedSessionID {
 			continue
@@ -541,7 +542,7 @@ func (c *Client) ListPendingPermissions(_ context.Context, sessionID string) ([]
 	return requests, nil
 }
 
-func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply agent.PermissionReply) error {
+func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("codex session id is required")
 	}
@@ -549,8 +550,8 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	if resolvedRequestID == "" {
 		return fmt.Errorf("permission request id is required")
 	}
-	resolvedReply := agent.PermissionReply(strings.TrimSpace(string(reply)))
-	if resolvedReply != agent.PermissionReplyOnce && resolvedReply != agent.PermissionReplyAlways && resolvedReply != agent.PermissionReplyReject {
+	resolvedReply := types.PermissionReply(strings.TrimSpace(string(reply)))
+	if resolvedReply != types.PermissionReplyOnce && resolvedReply != types.PermissionReplyAlways && resolvedReply != types.PermissionReplyReject {
 		return fmt.Errorf("unsupported permission reply: %s", resolvedReply)
 	}
 
@@ -561,14 +562,14 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	}
 	c.mu.Unlock()
 	if !ok {
-		return agent.ErrInteractionNoLongerPending
+		return types.ErrInteractionNoLongerPending
 	}
 
 	decision := "decline"
-	if resolvedReply == agent.PermissionReplyOnce {
+	if resolvedReply == types.PermissionReplyOnce {
 		decision = "accept"
 	}
-	if resolvedReply == agent.PermissionReplyAlways {
+	if resolvedReply == types.PermissionReplyAlways {
 		decision = "acceptForSession"
 	}
 	result := map[string]any{"decision": decision}
@@ -578,11 +579,11 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	return c.respond(ctx, pending.rpcID, result)
 }
 
-func (c *Client) ListPendingQuestions(_ context.Context, sessionID string) ([]agent.QuestionRequest, error) {
+func (c *Client) ListPendingQuestions(_ context.Context, sessionID string) ([]types.QuestionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	requests := make([]agent.QuestionRequest, 0, len(c.pendingQues))
+	requests := make([]types.QuestionRequest, 0, len(c.pendingQues))
 	for _, pending := range c.pendingQues {
 		if resolvedSessionID != "" && pending.request.SessionID != resolvedSessionID {
 			continue
@@ -616,7 +617,7 @@ func (c *Client) replyQuestion(ctx context.Context, sessionID string, requestID 
 	}
 	c.mu.Unlock()
 	if !ok {
-		return agent.ErrInteractionNoLongerPending
+		return types.ErrInteractionNoLongerPending
 	}
 	if reject {
 		return c.respond(ctx, pending.rpcID, map[string]any{"answers": map[string]any{}})
@@ -728,7 +729,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 			Delta    string `json:"delta"`
 		}
 		if decodeRaw(msg.Params, &params) == nil {
-			c.appendTurnText(params.ThreadID, params.TurnID, agent.MessageContentAnswer, params.Delta)
+			c.appendTurnText(params.ThreadID, params.TurnID, types.MessageContentAnswer, params.Delta)
 		}
 	case "item/reasoning/textDelta", "item/reasoning/summaryTextDelta":
 		var params struct {
@@ -737,7 +738,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 			Delta    string `json:"delta"`
 		}
 		if decodeRaw(msg.Params, &params) == nil {
-			c.appendTurnText(params.ThreadID, params.TurnID, agent.MessageContentReasoning, params.Delta)
+			c.appendTurnText(params.ThreadID, params.TurnID, types.MessageContentReasoning, params.Delta)
 		}
 	case "item/commandExecution/outputDelta":
 		var params struct {
@@ -746,7 +747,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 			Delta    string `json:"delta"`
 		}
 		if decodeRaw(msg.Params, &params) == nil {
-			c.appendTurnText(params.ThreadID, params.TurnID, agent.MessageContentActionTool, params.Delta)
+			c.appendTurnText(params.ThreadID, params.TurnID, types.MessageContentActionTool, params.Delta)
 		}
 	case "turn/diff/updated":
 		var params struct {
@@ -755,7 +756,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 			Diff     string `json:"diff"`
 		}
 		if decodeRaw(msg.Params, &params) == nil {
-			c.appendTurnText(params.ThreadID, params.TurnID, agent.MessageContentArtifactPatch, params.Diff)
+			c.appendTurnText(params.ThreadID, params.TurnID, types.MessageContentArtifactPatch, params.Diff)
 		}
 	case "item/fileChange/outputDelta", "item/fileChange/patchUpdated":
 		var params struct {
@@ -769,7 +770,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 			if text == "" && len(params.Changes) > 0 {
 				text = string(params.Changes)
 			}
-			c.appendTurnText(params.ThreadID, params.TurnID, agent.MessageContentArtifactPatch, text)
+			c.appendTurnText(params.ThreadID, params.TurnID, types.MessageContentArtifactPatch, text)
 		}
 	case "error":
 		var params struct {
@@ -807,7 +808,7 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 			return
 		}
 		requestID := stringRawID(msg.ID)
-		request := agent.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: formatCommandPermission(params), Patterns: trimStringSlice([]string{params.CWD}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
+		request := types.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: formatCommandPermission(params), Patterns: trimStringSlice([]string{params.CWD}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
 		c.mu.Lock()
 		c.pendingPerm[requestID] = pendingPermission{request: request, rpcID: msg.ID, kind: "command"}
 		c.mu.Unlock()
@@ -818,7 +819,7 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 			return
 		}
 		requestID := stringRawID(msg.ID)
-		request := agent.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: formatFilePermission(params), Patterns: trimStringSlice([]string{params.GrantRoot}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
+		request := types.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: formatFilePermission(params), Patterns: trimStringSlice([]string{params.GrantRoot}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
 		c.mu.Lock()
 		c.pendingPerm[requestID] = pendingPermission{request: request, rpcID: msg.ID, kind: "file"}
 		c.mu.Unlock()
@@ -829,7 +830,7 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 			return
 		}
 		requestID := stringRawID(msg.ID)
-		request := agent.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: firstNonEmpty(params.Reason, "Codex requests additional permissions"), Patterns: trimStringSlice([]string{params.CWD}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
+		request := types.PermissionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Permission: firstNonEmpty(params.Reason, "Codex requests additional permissions"), Patterns: trimStringSlice([]string{params.CWD}), Metadata: map[string]any{"turn_id": params.TurnID, "item_id": params.ItemID, "reason": params.Reason}}
 		c.mu.Lock()
 		c.pendingPerm[requestID] = pendingPermission{request: request, rpcID: msg.ID, kind: "permissions"}
 		c.mu.Unlock()
@@ -840,7 +841,7 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 			return
 		}
 		requestID := stringRawID(msg.ID)
-		questions := make([]agent.Question, 0, len(params.Questions))
+		questions := make([]types.Question, 0, len(params.Questions))
 		questionIDs := make([]string, 0, len(params.Questions))
 		for _, question := range params.Questions {
 			questionID := strings.TrimSpace(question.ID)
@@ -854,9 +855,9 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 					options = append(options, label)
 				}
 			}
-			questions = append(questions, agent.Question{Text: firstNonEmpty(question.Question, question.Header), Options: options, Multiple: false})
+			questions = append(questions, types.Question{Text: firstNonEmpty(question.Question, question.Header), Options: options, Multiple: false})
 		}
-		request := agent.QuestionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Questions: questions, Tool: agent.InteractionTool{CallID: strings.TrimSpace(params.ItemID)}}
+		request := types.QuestionRequest{ID: requestID, SessionID: strings.TrimSpace(params.ThreadID), Questions: questions, Tool: types.InteractionTool{CallID: strings.TrimSpace(params.ItemID)}}
 		c.mu.Lock()
 		c.pendingQues[requestID] = pendingQuestion{request: request, rpcID: msg.ID, questionIDs: questionIDs}
 		c.mu.Unlock()
@@ -873,7 +874,7 @@ func (c *Client) respondError(ctx context.Context, id json.RawMessage, code int6
 	return conn.respondError(ctx, id, code, message)
 }
 
-func (c *Client) storeSession(session agent.Session) {
+func (c *Client) storeSession(session types.Session) {
 	if strings.TrimSpace(session.ID) == "" {
 		return
 	}
@@ -902,7 +903,7 @@ func (c *Client) updateSessionDirectory(sessionID, directory string) {
 	state.Directory = strings.TrimSpace(directory)
 }
 
-func (c *Client) updateSessionModel(sessionID string, model agent.ModelRef) {
+func (c *Client) updateSessionModel(sessionID string, model types.ModelRef) {
 	if strings.TrimSpace(sessionID) == "" || model.IsZero() {
 		return
 	}
@@ -912,7 +913,7 @@ func (c *Client) updateSessionModel(sessionID string, model agent.ModelRef) {
 	state.Model = model
 }
 
-func (c *Client) ensureTurn(sessionID, turnID string, model agent.ModelRef) *turnState {
+func (c *Client) ensureTurn(sessionID, turnID string, model types.ModelRef) *turnState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.ensureSessionLocked(sessionID)
@@ -926,7 +927,7 @@ func (c *Client) ensureTurn(sessionID, turnID string, model agent.ModelRef) *tur
 	} else if !state.Model.IsZero() {
 		turn.Model = state.Model
 	} else {
-		turn.Model = agent.ModelRef{ProviderID: CodexProviderID, ModelID: ""}
+		turn.Model = types.ModelRef{ProviderID: CodexProviderID, ModelID: ""}
 	}
 	return turn
 }
@@ -940,21 +941,21 @@ func (c *Client) ensureSessionLocked(sessionID string) *sessionState {
 	return state
 }
 
-func (c *Client) appendTurnText(sessionID, turnID string, kind agent.MessageContentKind, text string) {
+func (c *Client) appendTurnText(sessionID, turnID string, kind types.MessageContentKind, text string) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" || text == "" {
 		return
 	}
-	turn := c.ensureTurn(sessionID, turnID, agent.ModelRef{})
+	turn := c.ensureTurn(sessionID, turnID, types.ModelRef{})
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch kind {
-	case agent.MessageContentAnswer:
+	case types.MessageContentAnswer:
 		turn.Answer.WriteString(text)
-	case agent.MessageContentReasoning:
+	case types.MessageContentReasoning:
 		turn.Reasoning.WriteString(text)
-	case agent.MessageContentActionTool:
+	case types.MessageContentActionTool:
 		turn.Action.WriteString(text)
-	case agent.MessageContentArtifactPatch:
+	case types.MessageContentArtifactPatch:
 		turn.Artifact.WriteString(text)
 	default:
 		turn.Diagnostic.WriteString(text)
@@ -965,7 +966,7 @@ func (c *Client) completeTurn(sessionID, turnID, status string, completedAt floa
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" {
 		return
 	}
-	turn := c.ensureTurn(sessionID, turnID, agent.ModelRef{})
+	turn := c.ensureTurn(sessionID, turnID, types.ModelRef{})
 	c.mu.Lock()
 	turn.Status = status
 	turn.CompletedAt = completedAt
@@ -978,41 +979,41 @@ func (c *Client) interruptTurn(ctx context.Context, sessionID, turnID string) er
 	return c.call(ctx, "turn/interrupt", map[string]any{"threadId": sessionID, "turnId": turnID}, nil)
 }
 
-func (t *turnState) render(output agent.MessageOutputOptions) string {
+func (t *turnState) render(output types.MessageOutputOptions) string {
 	builder := strings.Builder{}
-	if output.Includes(agent.MessageContentReasoning) && t.Reasoning.Len() > 0 {
+	if output.Includes(types.MessageContentReasoning) && t.Reasoning.Len() > 0 {
 		fmt.Fprintf(&builder, "\n<thinking>\n%s\n</thinking>", strings.TrimSpace(t.Reasoning.String()))
 	}
-	if output.Includes(agent.MessageContentActionTool) && t.Action.Len() > 0 {
+	if output.Includes(types.MessageContentActionTool) && t.Action.Len() > 0 {
 		fmt.Fprintf(&builder, "\n<tool type=\"output\">\n%s\n</tool>", strings.TrimSpace(t.Action.String()))
 	}
-	if output.Includes(agent.MessageContentArtifactPatch) && t.Artifact.Len() > 0 {
+	if output.Includes(types.MessageContentArtifactPatch) && t.Artifact.Len() > 0 {
 		fmt.Fprintf(&builder, "\n<patch>\n%s\n</patch>", strings.TrimSpace(t.Artifact.String()))
 	}
-	if output.Includes(agent.MessageContentDiagnostic) && t.Diagnostic.Len() > 0 {
+	if output.Includes(types.MessageContentDiagnostic) && t.Diagnostic.Len() > 0 {
 		fmt.Fprintf(&builder, "\n<diagnostic>\n%s\n</diagnostic>", strings.TrimSpace(t.Diagnostic.String()))
 	}
-	if output.Includes(agent.MessageContentAnswer) && t.Answer.Len() > 0 {
+	if output.Includes(types.MessageContentAnswer) && t.Answer.Len() > 0 {
 		builder.WriteString("\n" + strings.TrimSpace(t.Answer.String()))
 	}
 	return strings.TrimSpace(builder.String())
 }
 
-func (t *turnState) extractContent(output agent.MessageOutputOptions) extractedContent {
+func (t *turnState) extractContent(output types.MessageOutputOptions) extractedContent {
 	var result extractedContent
-	if output.Includes(agent.MessageContentAnswer) && t.Answer.Len() > 0 {
+	if output.Includes(types.MessageContentAnswer) && t.Answer.Len() > 0 {
 		result.Answer = strings.TrimSpace(t.Answer.String())
 	}
-	if output.Includes(agent.MessageContentReasoning) && t.Reasoning.Len() > 0 {
+	if output.Includes(types.MessageContentReasoning) && t.Reasoning.Len() > 0 {
 		result.Reasoning = strings.TrimSpace(t.Reasoning.String())
 	}
-	if output.Includes(agent.MessageContentActionTool) && t.Action.Len() > 0 {
+	if output.Includes(types.MessageContentActionTool) && t.Action.Len() > 0 {
 		result.Tools = strings.TrimSpace(t.Action.String())
 	}
-	if output.Includes(agent.MessageContentArtifactPatch) && t.Artifact.Len() > 0 {
+	if output.Includes(types.MessageContentArtifactPatch) && t.Artifact.Len() > 0 {
 		result.Patches = strings.TrimSpace(t.Artifact.String())
 	}
-	if output.Includes(agent.MessageContentDiagnostic) && t.Diagnostic.Len() > 0 {
+	if output.Includes(types.MessageContentDiagnostic) && t.Diagnostic.Len() > 0 {
 		result.Diagnostics = strings.TrimSpace(t.Diagnostic.String())
 	}
 	return result
@@ -1290,12 +1291,12 @@ type toolInputParams struct {
 	} `json:"questions"`
 }
 
-func toSession(thread codexThread) agent.Session {
+func toSession(thread codexThread) types.Session {
 	title := strings.TrimSpace(thread.Preview)
 	if thread.Name != nil && strings.TrimSpace(*thread.Name) != "" {
 		title = strings.TrimSpace(*thread.Name)
 	}
-	return agent.Session{ID: strings.TrimSpace(thread.ID), Title: title, Directory: strings.TrimSpace(thread.CWD)}
+	return types.Session{ID: strings.TrimSpace(thread.ID), Title: title, Directory: strings.TrimSpace(thread.CWD)}
 }
 
 func itemRoleAndContent(raw json.RawMessage) (string, string, string) {
@@ -1348,8 +1349,8 @@ func formatFilePermission(params fileApprovalParams) string {
 	return strings.Join(parts, ": ")
 }
 
-func mapPermissionScope(reply agent.PermissionReply) string {
-	if reply == agent.PermissionReplyAlways {
+func mapPermissionScope(reply types.PermissionReply) string {
+	if reply == types.PermissionReplyAlways {
 		return "session"
 	}
 	return "turn"

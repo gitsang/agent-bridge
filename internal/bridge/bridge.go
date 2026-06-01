@@ -3,15 +3,15 @@ package bridge
 import (
 	"log/slog"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
-	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
-	"github.com/gitsang/agent-bridge/internal/bridge/model_cache"
+	"github.com/gitsang/agent-bridge/internal/conversation_store"
+	"github.com/gitsang/agent-bridge/internal/model_cache"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 type AgentBridge struct {
 	logger               *slog.Logger
 	agentClient          AgentClient
-	messageOutputOptions agent.MessageOutputOptions
+	messageOutputOptions types.MessageOutputOptions
 	conversationStore    conversation_store.ConversationStore
 	modelCache           *model_cache.Cache
 	includeUserIdentity  bool
@@ -21,7 +21,7 @@ func defaultAgentBridge() *AgentBridge {
 	return &AgentBridge{
 		logger:               slog.Default(),
 		agentClient:          nil,
-		messageOutputOptions: agent.MessageOutputOptions{},
+		messageOutputOptions: types.MessageOutputOptions{},
 		conversationStore:    conversation_store.NewMemoryConversationStore(0, 0),
 		modelCache:           model_cache.New(),
 	}
@@ -41,7 +41,7 @@ func WithAgentClient(client AgentClient) OptionFunc {
 	}
 }
 
-func WithMessageOutputOptions(options agent.MessageOutputOptions) OptionFunc {
+func WithMessageOutputOptions(options types.MessageOutputOptions) OptionFunc {
 	return func(target *AgentBridge) {
 		target.messageOutputOptions = options
 	}

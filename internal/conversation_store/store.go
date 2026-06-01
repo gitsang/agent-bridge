@@ -3,7 +3,7 @@ package conversation_store
 import (
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 const (
@@ -15,7 +15,7 @@ type ConversationState struct {
 	ChatSessionID    string
 	AgentSessionID   string
 	DefaultModel     string
-	LastModel        agent.ModelRef
+	LastModel        types.ModelRef
 	DefaultAgent     string
 	DefaultDirectory string
 	BoundAt          time.Time
@@ -26,7 +26,7 @@ type ConversationStore interface {
 	Get(chatSessionID string) (ConversationState, bool)
 	PutBinding(chatSessionID string, agentSessionID string)
 	SetDefaultModel(chatSessionID string, model string)
-	SetLastModel(chatSessionID string, model agent.ModelRef)
+	SetLastModel(chatSessionID string, model types.ModelRef)
 	SetDefaultAgent(chatSessionID string, agent string)
 	SetDefaultDirectory(chatSessionID string, directory string)
 	Delete(chatSessionID string)

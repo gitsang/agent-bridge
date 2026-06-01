@@ -1,47 +1,51 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gitsang/agent-bridge/internal/types"
+)
 
 func TestMessageOutputOptionsIncludes(t *testing.T) {
 	tests := []struct {
 		name    string
-		options MessageOutputOptions
-		kind    MessageContentKind
+		options types.MessageOutputOptions
+		kind    types.MessageContentKind
 		want    bool
 	}{
 		{
 			name:    "empty include allows non empty kind",
-			options: MessageOutputOptions{},
-			kind:    MessageContentActionTool,
+			options: types.MessageOutputOptions{},
+			kind:    types.MessageContentActionTool,
 			want:    true,
 		},
 		{
 			name: "exact match",
-			options: MessageOutputOptions{
-				Include: []MessageContentKind{MessageContentAnswer},
+			options: types.MessageOutputOptions{
+				Include: []types.MessageContentKind{types.MessageContentAnswer},
 			},
-			kind: MessageContentAnswer,
+			kind: types.MessageContentAnswer,
 			want: true,
 		},
 		{
 			name: "parent match",
-			options: MessageOutputOptions{
-				Include: []MessageContentKind{MessageContentAction},
+			options: types.MessageOutputOptions{
+				Include: []types.MessageContentKind{types.MessageContentAction},
 			},
-			kind: MessageContentActionTool,
+			kind: types.MessageContentActionTool,
 			want: true,
 		},
 		{
 			name: "sibling mismatch",
-			options: MessageOutputOptions{
-				Include: []MessageContentKind{MessageContentArtifact},
+			options: types.MessageOutputOptions{
+				Include: []types.MessageContentKind{types.MessageContentArtifact},
 			},
-			kind: MessageContentActionTool,
+			kind: types.MessageContentActionTool,
 			want: false,
 		},
 		{
 			name:    "empty kind never matches",
-			options: MessageOutputOptions{},
+			options: types.MessageOutputOptions{},
 			kind:    "",
 			want:    false,
 		},

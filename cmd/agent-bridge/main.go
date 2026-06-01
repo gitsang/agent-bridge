@@ -15,7 +15,7 @@ import (
 	_ "github.com/gitsang/agent-bridge/internal/agent/codex"
 	_ "github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
-	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
+	"github.com/gitsang/agent-bridge/internal/conversation_store"
 	"github.com/gitsang/agent-bridge/internal/platform"
 	_ "github.com/gitsang/agent-bridge/internal/platform/mattermost"
 	_ "github.com/gitsang/agent-bridge/internal/platform/openai_compatible"

@@ -5,14 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 func TestCacheHumanizeZeroRef(t *testing.T) {
 	client := &fakeClient{}
 	cache := New()
 
-	if got := cache.Humanize(context.Background(), agent.ModelRef{}, client, "/tmp/project"); got != "" {
+	if got := cache.Humanize(context.Background(), types.ModelRef{}, client, "/tmp/project"); got != "" {
 		t.Fatalf("Humanize() = %q, want empty string", got)
 	}
 	if got := client.listModelsCalls; got != 0 {
@@ -21,9 +21,9 @@ func TestCacheHumanizeZeroRef(t *testing.T) {
 }
 
 func TestCacheHumanizeRefreshesOnMiss(t *testing.T) {
-	ref := agent.ModelRef{ProviderID: "openai", ModelID: "gpt-4.1"}
+	ref := types.ModelRef{ProviderID: "openai", ModelID: "gpt-4.1"}
 	client := &fakeClient{
-		models: []agent.ModelInfo{{
+		models: []types.ModelInfo{{
 			ModelRef:     ref,
 			ProviderName: "OpenAI",
 			ModelName:    "GPT-4.1",
@@ -42,9 +42,9 @@ func TestCacheHumanizeRefreshesOnMiss(t *testing.T) {
 }
 
 func TestCacheHumanizeUsesCachedEntry(t *testing.T) {
-	ref := agent.ModelRef{ProviderID: "openai", ModelID: "gpt-4.1"}
+	ref := types.ModelRef{ProviderID: "openai", ModelID: "gpt-4.1"}
 	client := &fakeClient{
-		models: []agent.ModelInfo{{
+		models: []types.ModelInfo{{
 			ModelRef:     ref,
 			ProviderName: "OpenAI",
 			ModelName:    "GPT-4.1",
@@ -64,7 +64,7 @@ func TestCacheHumanizeUsesCachedEntry(t *testing.T) {
 }
 
 func TestCacheHumanizeFallsBackToRefWhenRefreshFails(t *testing.T) {
-	ref := agent.ModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4"}
+	ref := types.ModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4"}
 	client := &fakeClient{listModelsErr: errors.New("boom")}
 	cache := New()
 
@@ -79,12 +79,12 @@ func TestCacheHumanizeFallsBackToRefWhenRefreshFails(t *testing.T) {
 }
 
 type fakeClient struct {
-	models          []agent.ModelInfo
+	models          []types.ModelInfo
 	listModelsErr   error
 	listModelsCalls int
 }
 
-func (c *fakeClient) ListModels(context.Context, string) ([]agent.ModelInfo, error) {
+func (c *fakeClient) ListModels(context.Context, string) ([]types.ModelInfo, error) {
 	c.listModelsCalls++
 	if c.listModelsErr != nil {
 		return nil, c.listModelsErr
@@ -92,55 +92,55 @@ func (c *fakeClient) ListModels(context.Context, string) ([]agent.ModelInfo, err
 	return c.models, nil
 }
 
-func (c *fakeClient) ResolveModel(context.Context, string, string) (agent.ModelRef, error) {
-	return agent.ModelRef{}, nil
+func (c *fakeClient) ResolveModel(context.Context, string, string) (types.ModelRef, error) {
+	return types.ModelRef{}, nil
 }
 
-func (c *fakeClient) ListAgents(context.Context, string) ([]agent.AgentInfo, error) {
+func (c *fakeClient) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) ListSessions(context.Context, string) ([]agent.Session, error) {
+func (c *fakeClient) ListSessions(context.Context, string) ([]types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) ListAllSessions(context.Context) ([]agent.Session, error) {
+func (c *fakeClient) ListAllSessions(context.Context) ([]types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) GetSession(context.Context, string) (*agent.Session, error) {
+func (c *fakeClient) GetSession(context.Context, string) (*types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) CreateSession(context.Context, agent.CreateSessionRequest) (*agent.Session, error) {
+func (c *fakeClient) CreateSession(context.Context, types.CreateSessionRequest) (*types.Session, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) GetMessages(context.Context, string) ([]agent.Message, error) {
+func (c *fakeClient) GetMessages(context.Context, string) ([]types.Message, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) GetLatestAssistantMessage(context.Context, string) (*agent.Message, error) {
+func (c *fakeClient) GetLatestAssistantMessage(context.Context, string) (*types.Message, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) Prompt(context.Context, string, string, ...agent.PromptOptionFunc) (*agent.PromptHandle, error) {
+func (c *fakeClient) Prompt(context.Context, string, string, ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) PollMessagesAfter(context.Context, string, float64, agent.MessageOutputOptions) ([]*agent.Message, error) {
+func (c *fakeClient) PollMessagesAfter(context.Context, string, float64, types.MessageOutputOptions) ([]*types.Message, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) ListPendingPermissions(context.Context, string) ([]agent.PermissionRequest, error) {
+func (c *fakeClient) ListPendingPermissions(context.Context, string) ([]types.PermissionRequest, error) {
 	return nil, nil
 }
 
-func (c *fakeClient) ReplyPermission(context.Context, string, string, agent.PermissionReply) error {
+func (c *fakeClient) ReplyPermission(context.Context, string, string, types.PermissionReply) error {
 	return nil
 }
 
-func (c *fakeClient) ListPendingQuestions(context.Context, string) ([]agent.QuestionRequest, error) {
+func (c *fakeClient) ListPendingQuestions(context.Context, string) ([]types.QuestionRequest, error) {
 	return nil, nil
 }
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -146,7 +146,7 @@ func (s *SQLiteConversationStore) SetDefaultModel(chatSessionID string, model st
 	`, resolvedChatSessionID, strings.TrimSpace(model), now)
 }
 
-func (s *SQLiteConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef) {
+func (s *SQLiteConversationStore) SetLastModel(chatSessionID string, model types.ModelRef) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return

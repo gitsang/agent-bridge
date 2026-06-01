@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/types"
 )
 
 type MemoryConversationStore struct {
@@ -132,7 +132,7 @@ func (s *MemoryConversationStore) SetDefaultDirectory(chatSessionID string, dire
 	s.conversations[resolvedChatSessionID] = state
 }
 
-func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model agent.ModelRef) {
+func (s *MemoryConversationStore) SetLastModel(chatSessionID string, model types.ModelRef) {
 	resolvedChatSessionID := strings.TrimSpace(chatSessionID)
 	if resolvedChatSessionID == "" {
 		return
