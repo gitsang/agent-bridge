@@ -10,7 +10,7 @@ import (
 
 type AgentBridge struct {
 	logger               *slog.Logger
-	agentClient          agent.Client
+	agentClient          AgentClient
 	messageOutputOptions agent.MessageOutputOptions
 	conversationStore    conversation_store.ConversationStore
 	modelCache           *model_cache.Cache
@@ -35,7 +35,7 @@ func WithLogger(logger *slog.Logger) OptionFunc {
 	}
 }
 
-func WithAgentClient(client agent.Client) OptionFunc {
+func WithAgentClient(client AgentClient) OptionFunc {
 	return func(target *AgentBridge) {
 		target.agentClient = client
 	}
