@@ -15,14 +15,14 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/bridge"
-	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
+	coreplatform "github.com/gitsang/agent-bridge/internal/platform"
 )
 
 func TestHTTPHandlerHandlesSlashCommandSynchronously(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestHTTPHandlerAcceptsSlashCommandAuthorizationHeader(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestHTTPHandlerAcceptsSlashCommandGET(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -131,7 +131,7 @@ func TestHTTPHandlerRejectsSlashCommandGETQueryToken(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -178,7 +178,7 @@ func TestHTTPHandlerRejectsInvalidToken(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -205,7 +205,7 @@ func TestHTTPHandlerRejectsWhenTokenIsNotConfigured(t *testing.T) {
 	_, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err == nil {
 		t.Fatalf("New() error is nil")
 	}
@@ -215,7 +215,7 @@ func TestHTTPHandlerRejectsOversizedBody(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -242,7 +242,7 @@ func TestHTTPHandlerHidesInternalSyncErrors(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -275,7 +275,7 @@ func TestHTTPHandlerShowsBadRequestBridgeErrors(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -308,7 +308,7 @@ func TestHTTPHandlerIgnoresDuplicatePostID(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -364,7 +364,7 @@ func TestHTTPHandlerSendsRepliesToResponseURL(t *testing.T) {
 			Token:            "secret",
 			ResponseURLHosts: []string{mustURLHost(t, callback.URL)},
 		},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -423,7 +423,7 @@ func TestHTTPHandlerRejectsUnallowedResponseURL(t *testing.T) {
 	p, err := New("mattermost-test", testLogger(), Config{
 		Mode:    ModeWebhook,
 		Webhook: WebhookConfig{Token: "secret"},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -518,7 +518,7 @@ func TestDecodeRequestAcceptsJSON(t *testing.T) {
 }
 
 func TestFactoryRegistersMattermost(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost")
+	factory, ok := coreplatform.GetPlatformFactory("mattermost")
 	if !ok {
 		t.Fatalf("mattermost factory is not registered")
 	}
@@ -527,7 +527,7 @@ func TestFactoryRegistersMattermost(t *testing.T) {
 		"webhook": map[string]any{
 			"token": "secret",
 		},
-	}, coreplugin.Infrastructure{Logger: testLogger()})
+	}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err != nil {
 		t.Fatalf("Construct() error = %v", err)
 	}
@@ -537,11 +537,11 @@ func TestFactoryRegistersMattermost(t *testing.T) {
 }
 
 func TestFactoryRequiresMode(t *testing.T) {
-	factory, ok := coreplugin.GetPluginFactory("mattermost")
+	factory, ok := coreplatform.GetPlatformFactory("mattermost")
 	if !ok {
 		t.Fatalf("mattermost factory is not registered")
 	}
-	_, err := factory.Construct("mattermost", map[string]any{}, coreplugin.Infrastructure{Logger: testLogger()})
+	_, err := factory.Construct("mattermost", map[string]any{}, coreplatform.Infrastructure{Logger: testLogger()})
 	if err == nil {
 		t.Fatalf("Construct() error is nil")
 	}

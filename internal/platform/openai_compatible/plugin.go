@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/bridge"
-	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
+	coreplatform "github.com/gitsang/agent-bridge/internal/platform"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,7 +26,7 @@ type Plugin struct {
 }
 
 func init() {
-	constructor := func(name string, configRaw any, infra coreplugin.Infrastructure) (coreplugin.Plugin, error) {
+	constructor := func(name string, configRaw any, infra coreplatform.Infrastructure) (coreplatform.Platform, error) {
 		cfg := defaultConfig()
 		configBytes, err := yaml.Marshal(configRaw)
 		if err != nil {
@@ -43,7 +43,7 @@ func init() {
 		return New(name, infra.Logger, cfg), nil
 	}
 
-	coreplugin.Register(coreplugin.PluginFactory{
+	coreplatform.Register(coreplatform.PlatformFactory{
 		Name:      "openai-compatible",
 		Construct: constructor,
 	})
@@ -56,7 +56,7 @@ func defaultConfig() Config {
 func New(name string, logger *slog.Logger, cfg Config) *Plugin {
 	return &Plugin{
 		name:   name,
-		logger: logger.With("plugin_name", name, "plugin_type", "openai-compatible"),
+		logger: logger.With("platform_name", name, "platform_type", "openai-compatible"),
 		cfg:    cfg,
 	}
 }
@@ -65,7 +65,7 @@ func (p *Plugin) Name() string {
 	return p.name
 }
 
-func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+func (p *Plugin) Serve(ctx context.Context, handle coreplatform.HandleFunc) error {
 	if handle == nil {
 		return fmt.Errorf("openai-compatible handle is required")
 	}
@@ -100,7 +100,7 @@ func (p *Plugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Message, er
 	return nil, fmt.Errorf("openai-compatible plugin does not support proactive send")
 }
 
-func (p *Plugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
+func (p *Plugin) newHTTPHandler(handle coreplatform.HandleFunc) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

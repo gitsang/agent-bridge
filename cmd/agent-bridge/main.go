@@ -16,10 +16,10 @@ import (
 	"github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/bridge/conversation_store"
-	"github.com/gitsang/agent-bridge/internal/plugin"
-	_ "github.com/gitsang/agent-bridge/internal/plugin/mattermost"
-	_ "github.com/gitsang/agent-bridge/internal/plugin/openai_compatible"
-	_ "github.com/gitsang/agent-bridge/internal/plugin/ume"
+	"github.com/gitsang/agent-bridge/internal/platform"
+	_ "github.com/gitsang/agent-bridge/internal/platform/mattermost"
+	_ "github.com/gitsang/agent-bridge/internal/platform/openai_compatible"
+	_ "github.com/gitsang/agent-bridge/internal/platform/ume"
 	"github.com/gitsang/agent-bridge/internal/version"
 	"github.com/gitsang/configer"
 	"github.com/spf13/cobra"
@@ -99,66 +99,66 @@ func Run(cmd *cobra.Command, _ []string) error {
 	runCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if len(c.Plugins) == 0 {
-		return fmt.Errorf("no enabled plugins configured")
+	if len(c.Platforms) == 0 {
+		return fmt.Errorf("no enabled platforms configured")
 	}
 
-	pluginInfra := plugin.Infrastructure{
+	platformInfra := platform.Infrastructure{
 		Logger:      logger,
 		Version:     version.String(),
 		AgentDriver: c.Agent.Driver,
 	}
 	group, groupCtx := errgroup.WithContext(runCtx)
 
-	instanceNames := make([]string, 0, len(c.Plugins))
-	for instanceName := range c.Plugins {
+	instanceNames := make([]string, 0, len(c.Platforms))
+	for instanceName := range c.Platforms {
 		instanceNames = append(instanceNames, instanceName)
 	}
 	sort.Strings(instanceNames)
 
 	for _, instanceName := range instanceNames {
-		instanceConfigRaw := c.Plugins[instanceName]
+		instanceConfigRaw := c.Platforms[instanceName]
 		instanceConfigMap, ok := instanceConfigRaw.(map[string]any)
 		if !ok {
-			return fmt.Errorf("plugin %s config must be a map", instanceName)
+			return fmt.Errorf("platform %s config must be a map", instanceName)
 		}
 		if len(instanceConfigMap) != 1 {
-			return fmt.Errorf("plugin %s config must define exactly one plugin type", instanceName)
+			return fmt.Errorf("platform %s config must define exactly one platform type", instanceName)
 		}
 
-		for pluginType, pluginConfigRaw := range instanceConfigMap {
-			if pluginConfigRaw == nil {
-				return fmt.Errorf("plugin %s config is nil", instanceName)
+		for platformType, platformConfigRaw := range instanceConfigMap {
+			if platformConfigRaw == nil {
+				return fmt.Errorf("platform %s config is nil", instanceName)
 			}
 
-			pluginFactory, ok := plugin.GetPluginFactory(pluginType)
+			platformFactory, ok := platform.GetPlatformFactory(platformType)
 			if !ok {
-				return fmt.Errorf("unsupported plugin type %q for %q", pluginType, instanceName)
+				return fmt.Errorf("unsupported platform type %q for %q", platformType, instanceName)
 			}
 
-			plugin, err := pluginFactory.Construct(instanceName, pluginConfigRaw, pluginInfra)
+			plt, err := platformFactory.Construct(instanceName, platformConfigRaw, platformInfra)
 			if err != nil {
-				return fmt.Errorf("build plugin %s (%s): %w", instanceName, pluginType, err)
+				return fmt.Errorf("build platform %s (%s): %w", instanceName, platformType, err)
 			}
-			if plugin == nil {
-				return fmt.Errorf("build plugin %s (%s): factory returned nil plugin", instanceName, pluginType)
+			if plt == nil {
+				return fmt.Errorf("build platform %s (%s): factory returned nil platform", instanceName, platformType)
 			}
 
-			currentPlugin := plugin
-			logPluginConfig := redactLogValue(pluginConfigRaw)
+			currentPlatform := plt
+			logPlatformConfig := redactLogValue(platformConfigRaw)
 			group.Go(func() error {
 				logger := logger.With(
-					slog.String("plugin_name", instanceName),
-					slog.String("plugin_type", pluginType),
-					slog.Any("plugin_config", logPluginConfig),
+					slog.String("platform_name", instanceName),
+					slog.String("platform_type", platformType),
+					slog.Any("platform_config", logPlatformConfig),
 				)
 				defer func() {
-					logger.Debug("plugin stopped")
+					logger.Debug("platform stopped")
 				}()
-				logger.Debug("starting plugin")
+				logger.Debug("starting platform")
 
-				if err := currentPlugin.Serve(groupCtx, connector.Handle); err != nil {
-					return fmt.Errorf("%s plugin failed: %w", currentPlugin.Name(), err)
+				if err := currentPlatform.Serve(groupCtx, connector.Handle); err != nil {
+					return fmt.Errorf("%s platform failed: %w", currentPlatform.Name(), err)
 				}
 				return nil
 			})

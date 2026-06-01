@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/bridge"
-	coreplugin "github.com/gitsang/agent-bridge/internal/plugin"
+	coreplatform "github.com/gitsang/agent-bridge/internal/platform"
 	"github.com/mattermost/mattermost-server/v5/model"
 	"gopkg.in/yaml.v3"
 )
@@ -95,7 +95,7 @@ type chatSessionState struct {
 }
 
 func init() {
-	constructor := func(name string, configRaw any, infra coreplugin.Infrastructure) (coreplugin.Plugin, error) {
+	constructor := func(name string, configRaw any, infra coreplatform.Infrastructure) (coreplatform.Platform, error) {
 		cfg := Config{}
 		configBytes, err := yaml.Marshal(configRaw)
 		if err != nil {
@@ -112,13 +112,13 @@ func init() {
 		return New(name, infra.Logger, cfg, infra)
 	}
 
-	coreplugin.Register(coreplugin.PluginFactory{
+	coreplatform.Register(coreplatform.PlatformFactory{
 		Name:      "mattermost",
 		Construct: constructor,
 	})
 }
 
-func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastructure) (*Plugin, error) {
+func New(name string, logger *slog.Logger, cfg Config, infra coreplatform.Infrastructure) (*Plugin, error) {
 	mode := strings.TrimSpace(strings.ToLower(cfg.Mode))
 	if mode == "" {
 		return nil, fmt.Errorf("mattermost: mode is required (webhook or websocket)")
@@ -131,7 +131,7 @@ func New(name string, logger *slog.Logger, cfg Config, infra coreplugin.Infrastr
 
 	p := &Plugin{
 		name:          name,
-		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost", "mode", mode),
+		logger:        logger.With("platform_name", name, "platform_type", "mattermost", "mode", mode),
 		mode:          mode,
 		commandPrefix: commandPrefix,
 	}
@@ -166,7 +166,7 @@ func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig, versi
 	}
 
 	return &webhookPlugin{
-		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost-webhook"),
+		logger:        logger.With("platform_name", name, "platform_type", "mattermost-webhook"),
 		cfg:           cfg,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		version:       version,
@@ -178,7 +178,7 @@ func newWebhookPlugin(logger *slog.Logger, name string, cfg WebhookConfig, versi
 
 func newWebsocketPlugin(logger *slog.Logger, name string, cfg WebsocketConfig, version, agentDriver, commandPrefix string) *websocketPlugin {
 	return &websocketPlugin{
-		logger:        logger.With("plugin_name", name, "plugin_type", "mattermost-websocket"),
+		logger:        logger.With("platform_name", name, "platform_type", "mattermost-websocket"),
 		cfg:           cfg,
 		httpClient:    &http.Client{Timeout: responseTimeout},
 		version:       version,
@@ -191,7 +191,7 @@ func (p *Plugin) Name() string {
 	return p.name
 }
 
-func (p *Plugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+func (p *Plugin) Serve(ctx context.Context, handle coreplatform.HandleFunc) error {
 	switch p.mode {
 	case ModeWebhook:
 		return p.webhook.Serve(ctx, handle)
@@ -241,7 +241,7 @@ func (p *websocketPlugin) transformContent(content string) string {
 
 // webhookPlugin implementation
 
-func (p *webhookPlugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+func (p *webhookPlugin) Serve(ctx context.Context, handle coreplatform.HandleFunc) error {
 	if handle == nil {
 		return fmt.Errorf("mattermost handle is required")
 	}
@@ -275,7 +275,7 @@ func (p *webhookPlugin) Send(_ context.Context, _ *bridge.Message) (*bridge.Mess
 	return nil, fmt.Errorf("mattermost webhook plugin does not support proactive send")
 }
 
-func (p *webhookPlugin) newHTTPHandler(handle coreplugin.HandleFunc) http.Handler {
+func (p *webhookPlugin) newHTTPHandler(handle coreplatform.HandleFunc) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -440,7 +440,7 @@ func sameToken(requestToken string, configuredToken string) bool {
 	return subtle.ConstantTimeCompare(requestSum[:], configuredSum[:]) == 1
 }
 
-func (p *webhookPlugin) handleAsync(request MattermostRequest, connectReq *bridge.Message, handle coreplugin.HandleFunc) {
+func (p *webhookPlugin) handleAsync(request MattermostRequest, connectReq *bridge.Message, handle coreplatform.HandleFunc) {
 	replyLogger := p.logger.With(
 		"channel_id", strings.TrimSpace(request.ChannelID),
 		"user_id", strings.TrimSpace(request.UserID),
@@ -648,7 +648,7 @@ func (p *webhookPlugin) limitSessionStatesLocked(now time.Time) {
 
 // websocketPlugin implementation
 
-func (p *websocketPlugin) Serve(ctx context.Context, handle coreplugin.HandleFunc) error {
+func (p *websocketPlugin) Serve(ctx context.Context, handle coreplatform.HandleFunc) error {
 	if handle == nil {
 		return fmt.Errorf("mattermost-ws: handle is required")
 	}
@@ -722,7 +722,7 @@ func (p *websocketPlugin) fetchBotUserID() (string, error) {
 	return user.ID, nil
 }
 
-func (p *websocketPlugin) connectAndListen(ctx context.Context, handle coreplugin.HandleFunc) error {
+func (p *websocketPlugin) connectAndListen(ctx context.Context, handle coreplatform.HandleFunc) error {
 	wsClient, err := model.NewWebSocketClient4(p.cfg.WSURL, p.cfg.AccessToken)
 	if err != nil {
 		return fmt.Errorf("create websocket client: %w", err)
@@ -750,7 +750,7 @@ func (p *websocketPlugin) connectAndListen(ctx context.Context, handle coreplugi
 	}
 }
 
-func (p *websocketPlugin) handleEvent(event *model.WebSocketEvent, handle coreplugin.HandleFunc) {
+func (p *websocketPlugin) handleEvent(event *model.WebSocketEvent, handle coreplatform.HandleFunc) {
 	if event.EventType() != model.WEBSOCKET_EVENT_POSTED {
 		return
 	}

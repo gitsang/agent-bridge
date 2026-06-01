@@ -13,7 +13,7 @@ type Config struct {
 		} `mapstructure:"handlers"`
 		Providers map[string][]LogConfig `mapstructure:"providers"`
 	} `mapstructure:"log"`
-	Plugins map[string]any `mapstructure:"plugins"`
+	Platforms map[string]any `mapstructure:"platforms"`
 	Agent   struct {
 		Driver        string                     `default:"opencode" usage:"agent driver" mapstructure:"driver"`
 		MessageOutput agent.MessageOutputOptions `default:"{}" usage:"agent message output options" mapstructure:"message_output"`

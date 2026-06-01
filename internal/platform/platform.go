@@ -1,4 +1,4 @@
-package plugin
+package platform
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 type HandleFunc func(ctx context.Context, req *bridge.Message, reply bridge.ReplyFunc) error
 
-type Plugin interface {
+type Platform interface {
 	Name() string
 	Serve(ctx context.Context, handle HandleFunc) error
 	Send(ctx context.Context, req *bridge.Message) (*bridge.Message, error)
@@ -23,36 +23,36 @@ type Infrastructure struct {
 	AgentDriver string
 }
 
-type Construct func(name string, configRaw any, infra Infrastructure) (Plugin, error)
+type Construct func(name string, configRaw any, infra Infrastructure) (Platform, error)
 
-type PluginFactory struct {
+type PlatformFactory struct {
 	Name      string
 	Construct Construct
 }
 
 var (
-	registrationMu   sync.RWMutex
-	pluginFactoryMap = map[string]PluginFactory{}
+	registrationMu     sync.RWMutex
+	platformFactoryMap = map[string]PlatformFactory{}
 )
 
-func Register(registration PluginFactory) {
+func Register(registration PlatformFactory) {
 	if registration.Name == "" {
-		panic("plugin registration key is required")
+		panic("platform registration key is required")
 	}
 	if registration.Construct == nil {
-		panic(fmt.Sprintf("plugin %s build function is required", registration.Name))
+		panic(fmt.Sprintf("platform %s build function is required", registration.Name))
 	}
 
 	registrationMu.Lock()
 	defer registrationMu.Unlock()
 
-	pluginFactoryMap[registration.Name] = registration
+	platformFactoryMap[registration.Name] = registration
 }
 
-func GetPluginFactory(key string) (PluginFactory, bool) {
+func GetPlatformFactory(key string) (PlatformFactory, bool) {
 	registrationMu.RLock()
 	defer registrationMu.RUnlock()
 
-	registration, ok := pluginFactoryMap[key]
+	registration, ok := platformFactoryMap[key]
 	return registration, ok
 }

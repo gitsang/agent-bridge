@@ -10,7 +10,7 @@ log:
           stdout:
             enable: true
 
-plugins:
+platforms:
   openai-compatible:
     openai-compatible:
       listen: ":24368"
