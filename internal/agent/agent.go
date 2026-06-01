@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Model
@@ -42,6 +43,7 @@ type Session struct {
 	ID        string
 	Title     string
 	Directory string
+	UpdatedAt time.Time
 }
 
 type CreateSessionRequest struct {

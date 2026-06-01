@@ -570,9 +570,10 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}, nil
 	case "list":
 		_, hasGlobal := invocation.Flags["global"]
+		_, hasActive := invocation.Flags["active"]
 
 		if hasGlobal {
-			listing, err := c.listAllSessions(ctx)
+			listing, err := c.listAllSessions(ctx, hasActive)
 			if err != nil {
 				return nil, NewError(http.StatusBadGateway, err.Error())
 			}
@@ -583,7 +584,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		if directory == "" {
 			directory = c.resolveDirectoryForList(req)
 		}
-		listing, err := c.listSessions(ctx, directory)
+		listing, err := c.listSessions(ctx, directory, hasActive)
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
@@ -1089,7 +1090,7 @@ func formatQuestionRequest(index int, request agent.QuestionRequest) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func (c *AgentBridge) listSessions(ctx context.Context, directory string) (string, error) {
+func (c *AgentBridge) listSessions(ctx context.Context, directory string, activeOnly ...bool) (string, error) {
 	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
@@ -1097,6 +1098,13 @@ func (c *AgentBridge) listSessions(ctx context.Context, directory string) (strin
 
 	if len(sessions) == 0 {
 		return "- (no sessions)", nil
+	}
+
+	if len(activeOnly) > 0 && activeOnly[0] {
+		sessions = filterSessionsByActivity(sessions)
+		if len(sessions) == 0 {
+			return "- (no active sessions)", nil
+		}
 	}
 
 	byDirectory := map[string][]string{}
@@ -1142,7 +1150,7 @@ func (c *AgentBridge) listSessions(ctx context.Context, directory string) (strin
 	return strings.TrimSpace(builder.String()), nil
 }
 
-func (c *AgentBridge) listAllSessions(ctx context.Context) (string, error) {
+func (c *AgentBridge) listAllSessions(ctx context.Context, activeOnly ...bool) (string, error) {
 	sessions, err := c.agentClient.ListAllSessions(ctx)
 	if err != nil {
 		return "", err
@@ -1150,6 +1158,13 @@ func (c *AgentBridge) listAllSessions(ctx context.Context) (string, error) {
 
 	if len(sessions) == 0 {
 		return "- (no sessions)", nil
+	}
+
+	if len(activeOnly) > 0 && activeOnly[0] {
+		sessions = filterSessionsByActivity(sessions)
+		if len(sessions) == 0 {
+			return "- (no active sessions)", nil
+		}
 	}
 
 	byDirectory := map[string][]string{}
@@ -1193,6 +1208,17 @@ func (c *AgentBridge) listAllSessions(ctx context.Context) (string, error) {
 	}
 
 	return strings.TrimSpace(builder.String()), nil
+}
+
+func filterSessionsByActivity(sessions []agent.Session) []agent.Session {
+	cutoff := time.Now().Add(-24 * time.Hour)
+	active := make([]agent.Session, 0, len(sessions))
+	for _, session := range sessions {
+		if session.UpdatedAt.After(cutoff) {
+			active = append(active, session)
+		}
+	}
+	return active
 }
 
 func (c *AgentBridge) listModels(ctx context.Context, directory string) (string, error) {
@@ -1254,7 +1280,7 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 		case "new":
 			return "Usage: /new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]"
 		case "session":
-			return "Usage: /session <attach|detach|current|list> [args] [--global] [--directory <path>]"
+			return "Usage: /session <attach|detach|current|list> [args] [--global] [--active] [--directory <path>]"
 		case "model":
 			return "Usage: /model <set|list> [model]"
 		case "agent":
@@ -1274,7 +1300,7 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 		"- /session attach <agent-session-id>",
 		"- /session detach",
 		"- /session current",
-		"- /session list [--global] [--directory <path>]",
+		"- /session list [--global] [--active] [--directory <path>]",
 		"- /model set <provider/model|model>",
 		"- /model list",
 		"- /agent set <name>",

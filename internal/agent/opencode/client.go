@@ -183,7 +183,7 @@ func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
 	defer db.Close()
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, title, directory
+		SELECT id, title, directory, time_updated
 		FROM session
 		ORDER BY time_updated DESC
 	`)
@@ -195,8 +195,13 @@ func (c *Client) ListAllSessions(ctx context.Context) ([]agent.Session, error) {
 	var sessions []agent.Session
 	for rows.Next() {
 		var s agent.Session
-		if err := rows.Scan(&s.ID, &s.Title, &s.Directory); err != nil {
+		var timeUpdatedMs float64
+		if err := rows.Scan(&s.ID, &s.Title, &s.Directory, &timeUpdatedMs); err != nil {
 			continue
+		}
+		if timeUpdatedMs > 0 {
+			// time_updated is stored in milliseconds, convert to seconds
+			s.UpdatedAt = time.Unix(0, int64(timeUpdatedMs*float64(time.Millisecond)))
 		}
 		sessions = append(sessions, s)
 	}
@@ -764,10 +769,15 @@ func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (agen
 }
 
 func toSession(s ocsdk.Session) agent.Session {
+	var updatedAt time.Time
+	if s.Time.Updated > 0 {
+		updatedAt = time.Unix(0, int64(s.Time.Updated*float64(time.Millisecond)))
+	}
 	return agent.Session{
 		ID:        strings.TrimSpace(s.ID),
 		Title:     strings.TrimSpace(s.Title),
 		Directory: strings.TrimSpace(s.Directory),
+		UpdatedAt: updatedAt,
 	}
 }
 

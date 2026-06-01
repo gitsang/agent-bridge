@@ -68,6 +68,7 @@ type sessionState struct {
 	Turns     map[string]*turnState
 	Running   bool
 	Started   bool
+	UpdatedAt time.Time
 }
 
 type turnState struct {
@@ -190,7 +191,12 @@ func (c *Client) ListSessions(context.Context, string) ([]agent.Session, error) 
 	defer c.mu.Unlock()
 	sessions := make([]agent.Session, 0, len(c.sessions))
 	for _, state := range c.sessions {
-		sessions = append(sessions, agent.Session{ID: state.ID, Title: state.Title, Directory: state.Directory})
+		sessions = append(sessions, agent.Session{
+			ID:        state.ID,
+			Title:     state.Title,
+			Directory: state.Directory,
+			UpdatedAt: state.UpdatedAt,
+		})
 	}
 	sort.Slice(sessions, func(i, j int) bool { return sessions[i].ID < sessions[j].ID })
 	return sessions, nil
@@ -211,7 +217,12 @@ func (c *Client) GetSession(_ context.Context, sessionID string) (*agent.Session
 	if state == nil {
 		return &agent.Session{ID: resolvedSessionID}, nil
 	}
-	session := agent.Session{ID: state.ID, Title: state.Title, Directory: state.Directory}
+	session := agent.Session{
+		ID:        state.ID,
+		Title:     state.Title,
+		Directory: state.Directory,
+		UpdatedAt: state.UpdatedAt,
+	}
 	return &session, nil
 }
 
@@ -220,16 +231,23 @@ func (c *Client) CreateSession(_ context.Context, request agent.CreateSessionReq
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	session := &sessionState{
 		ID:        sessionID,
 		Title:     strings.TrimSpace(request.Title),
 		Directory: strings.TrimSpace(request.Directory),
 		Turns:     map[string]*turnState{},
+		UpdatedAt: now,
 	}
 	c.mu.Lock()
 	c.sessions[session.ID] = session
 	c.mu.Unlock()
-	return &agent.Session{ID: session.ID, Title: session.Title, Directory: session.Directory}, nil
+	return &agent.Session{
+		ID:        session.ID,
+		Title:     session.Title,
+		Directory: session.Directory,
+		UpdatedAt: now,
+	}, nil
 }
 
 func (c *Client) GetMessages(_ context.Context, sessionID string) ([]agent.Message, error) {
@@ -297,7 +315,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	c.mu.Lock()
 	state := c.sessions[resolvedSessionID]
 	if state == nil {
-		state = &sessionState{ID: resolvedSessionID, Turns: map[string]*turnState{}, Started: true}
+		state = &sessionState{ID: resolvedSessionID, Turns: map[string]*turnState{}, Started: true, UpdatedAt: time.Now()}
 		c.sessions[resolvedSessionID] = state
 	}
 	if state.Running {
@@ -558,8 +576,10 @@ func (c *Client) completeTurn(sessionID, turnID string, err error) {
 	if turn == nil {
 		return
 	}
-	turn.CompletedAt = nowCompletedAt()
+	now := nowCompletedAt()
+	turn.CompletedAt = now
 	turn.Err = err
+	state.UpdatedAt = time.Unix(0, int64(now*float64(time.Second)))
 }
 
 func (c *Client) setTurnError(sessionID, turnID string, err error) {
