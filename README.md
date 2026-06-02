@@ -1,177 +1,438 @@
-# agent-bridge
+<!-- MarkdownTitleNumber auto -->
 
-An agent bridge for connecting AI agents to chat applications
+# Agent Bridge
 
-## Platforms
+一个连接 AI 代理与聊天应用的桥梁，让你可以通过 Mattermost、OpenAI 兼容接口等聊天软件与 AI 编程助手（如 Claude Code、Codex、OpenCode）进行交互。
 
-我们使用平台的形式来实现不同聊天软件的集成。
+## 1. 核心思想
 
-使用明确的职责区分，平台的职责只有：**传递消息**，负责建立通讯软件与 Connect 之间的桥梁。
+### 1.1 设计理念
 
-### 接口
+Agent Bridge 的核心设计思想是**分离关注点**和**统一抽象**：
 
-平台使用统一的接口
+1. **平台与代理分离**：聊天平台只负责消息的收发，AI 代理只负责代码生成和交互，两者通过 Agent Bridge 进行连接
+2. **统一接口设计**：所有聊天平台实现相同的 `Platform` 接口，所有 AI 代理实现相同的 `Agent` 接口，实现即插即用
+3. **流式响应支持**：支持流式输出，让用户可以实时看到 AI 代理的思考过程和生成结果
+4. **会话状态管理**：维护聊天会话与 AI 代理会话的绑定关系，支持多轮对话和会话切换
+
+### 1.2 架构概览
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   聊天应用      │    │  Agent Bridge   │    │    AI 代理      │
+│  (Mattermost,   │◄──►│                 │◄──►│  (Claude Code,  │
+│   OpenAI API,   │    │  - Platform 接口│    │   Codex,        │
+│   etc.)         │    │  - Agent 接口   │    │   OpenCode)     │
+└─────────────────┘    │  - Bridge 核心  │    └─────────────────┘
+                       └─────────────────┘
+```
+
+**消息流向**：
+
+1. 用户在聊天应用中发送消息
+2. Platform 接收消息并转换为统一格式
+3. Bridge 处理消息（解析命令、管理会话）
+4. Agent 接收 prompt 并调用 AI 代理
+5. AI 代理返回结果，通过 reply 回调逐条推送
+6. Platform 将结果发送回聊天应用
+
+## 2. 核心概念
+
+### 2.1 Platform（平台）
+
+Platform 是聊天应用的抽象层，负责：
+
+- 接收来自聊天应用的消息
+- 将消息转换为统一的 `bridge.Message` 格式
+- 调用 `HandleFunc` 处理消息
+- 将 AI 代理的回复发送回聊天应用
 
 ```go
 type Platform interface {
-	Name() string
-	Serve(ctx context.Context, handle HandleFunc) error
-	Send(ctx context.Context, req *bridge.Message) (*bridge.Message, error)
+    Name() string
+    Serve(ctx context.Context, handle HandleFunc) error
+    Send(ctx context.Context, req *bridge.Message) (*bridge.Message, error)
 }
 ```
 
-只需要做一件事情，就是如何接收消息，转换消息，调用 HandlerFunc 处理，然后将 reply 回调收到的消息送回通讯软件。
-
-`HandleFunc` 签名如下：
+**HandleFunc 签名**：
 
 ```go
 type HandleFunc func(ctx context.Context, req *bridge.Message, reply bridge.ReplyFunc) error
 ```
 
-`reply` 是一个回调，agent 每产出一条回复就会调用一次。对于支持流式输出的通讯软件，平台可以在 `reply` 被调用时立即发送；对于只需要最终结果的场景（如 HTTP 同步接口），可以在回调里暂存最后一条消息，等 handle 返回后再使用。
+`reply` 是一个回调函数，AI 代理每产出一条回复就会调用一次。对于支持流式输出的聊天平台，可以在 `reply` 被调用时立即发送；对于只需要最终结果的场景，可以在回调里暂存消息，等 handle 返回后再使用。
 
-一个简单的伪代码例子：
+### 2.2 Agent（代理）
+
+Agent 是 AI 代理的抽象层，负责：
+
+- 管理 AI 代理会话
+- 发送 prompt 并获取响应
+- 处理权限请求和用户问题
+- 获取会话历史和模型信息
 
 ```go
-func (p *MyPlatform) Serve(ctx context.Context, handle platform.HandleFunc) error {
-  for {
-    message := ReceiveMessageFromChatApp()
-    err := handle(ctx, message, func(reply *bridge.Message) error {
-      SendMessageToChatApp(reply)
-      return nil
-    })
-    if err != nil {
-      SendErrorToChatApp(err)
-    }
-  }
+type Agent interface {
+    // 模型管理
+    ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error)
+    ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error)
+
+    // 代理管理
+    ListAgents(ctx context.Context, directory string) ([]types.AgentInfo, error)
+
+    // 会话管理
+    ListSessions(ctx context.Context, directory string) ([]types.Session, error)
+    CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error)
+    GetSession(ctx context.Context, sessionID string) (*types.Session, error)
+
+    // 消息交互
+    Prompt(ctx context.Context, sessionID string, prompt string, opts ...types.PromptOptionFunc) (*types.PromptHandle, error)
+    PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error)
+
+    // 权限和问题处理
+    ListPendingPermissions(ctx context.Context, sessionID string) ([]types.PermissionRequest, error)
+    ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error
+    ListPendingQuestions(ctx context.Context, sessionID string) ([]types.QuestionRequest, error)
+    ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error
 }
 ```
 
-Send 接口当前暂时没有使用，是为了后续的 Heartbeat/Schedule 等主动发送场景预留的通道。
+### 2.3 Bridge（桥梁）
 
-### Supports
+Bridge 是核心组件，负责：
 
-- [x] OpenAI-compatible Chat Completions API
-- [x] Mattermost (Webhook)
-- [x] Mattermost (WebSocket)
-- [ ] Slack
+- 解析用户输入（普通消息或斜杠命令）
+- 管理会话绑定关系
+- 处理斜杠命令（`/new`、`/session`、`/model` 等）
+- 协调 Platform 和 Agent 的交互
 
-### Mattermost (Webhook)
+## 3. 快速开始
 
-Mattermost can call agent-bridge through an outgoing webhook or slash command endpoint.
+### 3.1 安装
+
+```bash
+# 从源码编译
+git clone https://github.com/gitsang/agent-bridge.git
+cd agent-bridge
+go build -o agent-bridge ./cmd/agent-bridge
+
+# 或使用 go install
+go install github.com/gitsang/agent-bridge/cmd/agent-bridge@latest
+```
+
+### 3.2 配置
+
+创建配置文件 `config.yaml`：
+
+```yaml
+# 日志配置
+log:
+  handlers:
+    default: "default"
+  providers:
+    default:
+      - format: "json"
+        level: "info"
+        output:
+          stdout:
+            enable: true
+
+# 平台配置
+platforms:
+  # OpenAI 兼容 API（支持任何 OpenAI SDK 客户端）
+  openai-compatible:
+    openai-compatible:
+      listen: ":24368"
+
+  # Mattermost 集成
+  mattermost:
+    mattermost:
+      mode: "websocket" # webhook 或 websocket
+      websocket:
+        server_url: "https://mattermost.example.com"
+        ws_url: "wss://mattermost.example.com"
+        access_token: "your-bot-token"
+
+# AI 代理配置
+agent:
+  driver: claude # 支持: opencode, codex, claude
+  claude:
+    command: "claude"
+    args:
+      - "-p"
+      - "--output-format"
+      - "stream-json"
+      - "--verbose"
+    timeout: 30m
+
+# 会话存储配置
+conversation:
+  store:
+    type: "sqlite" # memory, file, sqlite
+    path: "data/conversation.db"
+    ttl: 24h
+    max_items: 1024
+```
+
+### 3.3 启动
+
+```bash
+# 使用配置文件启动
+./agent-bridge --config config.yaml
+
+# 或使用环境变量
+export ANTHROPIC_API_KEY="your-api-key"
+./agent-bridge --config config.yaml
+```
+
+### 3.4 测试
+
+使用 curl 测试 OpenAI 兼容 API：
+
+```bash
+curl http://localhost:24368/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'
+```
+
+## 4. 配置说明
+
+### 4.1 平台配置
+
+#### 4.1.1 OpenAI 兼容 API
+
+提供标准的 OpenAI Chat Completions API 接口，支持任何 OpenAI SDK 客户端。
+
+```yaml
+platforms:
+  openai-compatible:
+    openai-compatible:
+      listen: ":24368" # 监听地址
+```
+
+#### 4.1.2 Mattermost（WebSocket）
+
+适用于 Mattermost 无法直接访问 Agent Bridge 的场景（如内网环境），通过 WebSocket 主动连接 Mattermost。
 
 ```yaml
 platforms:
   mattermost:
-    mattermost-webhook:
-      listen: ":24370"
-      token: "mattermost-token"
-      response_url_hosts:
-        - "mattermost.example.com"
+    mattermost:
+      mode: "websocket"
+      command_prefix: "!" # 命令前缀，默认 "/"
+      websocket:
+        server_url: "https://mattermost.example.com"
+        ws_url: "wss://mattermost.example.com"
+        access_token: "bot-access-token"
 ```
 
-Configure the Mattermost integration URL to the platform endpoint. The platform accepts
-Mattermost form payloads, validates either the form `token` or
-`Authorization: Token <token>`, maps `team_id`, `channel_id`, and `user_id` to
-the chat session, then sends agent replies back as Mattermost JSON responses.
-When Mattermost provides `response_url`, replies are posted to that URL so
-multiple streaming replies can be delivered. Add the Mattermost `response_url`
-host to `response_url_hosts` so the platform only calls approved callback hosts.
+#### 4.1.3 Mattermost（Webhook）
 
-### Mattermost (WebSocket)
-
-For environments where Mattermost cannot reach agent-bridge (e.g., internal network),
-use the WebSocket platform. The bot connects outbound to Mattermost, so no inbound
-port is needed.
+通过 Mattermost 的 Outgoing Webhook 或 Slash Command 接收消息。
 
 ```yaml
 platforms:
-  mattermost-ws:
-    mattermost-websocket:
-      server_url: "https://mattermost.example.com"
-      ws_url: "wss://mattermost.example.com"
-      access_token: "bot-access-token"
+  mattermost:
+    mattermost:
+      mode: "webhook"
+      webhook:
+        listen: ":24370"
+        token: "mattermost-token"
+        response_url_hosts:
+          - "mattermost.example.com"
 ```
 
-The platform automatically fetches `bot_user_id` on startup via `/api/v4/users/me`.
+### 4.2 AI 代理配置
 
-## Slash commands:
+#### 4.2.1 Claude Code
 
-- `/new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]`
-- `/session attach <agent-session-id>`
-- `/session detach`
-- `/session current`
-- `/session list [--directory <path>]`
-- `/model set <provider/model|model>`
-- `/model list`
-- `/agent set <name>`
-- `/agent list`
-- `/directory set <path>`
-- `/permission <once|always|reject> [id|index]`
-- `/question [id|index] <answer...>`
-- `/question reject [id|index]`
-- `/help [new|session|model|agent|directory|permission|question]`
-
-
-## Codex driver
-
-可以直接使用 Codex app-server 作为 agent driver：
-
-```yaml
-agent:
-  driver: codex
-  codex:
-    command: "codex"
-    args: ["app-server", "--listen", "stdio://"]
-    timeout: 30m
-    initialize_timeout: 15s
-```
-
-示例配置见 `configs/config.codex.example.yaml` 和 `configs/config.codex.develop.yaml`。
-
-## Claude Code driver
-
-可以使用 Claude Code CLI 的非交互 `stream-json` 输出作为 agent driver：
+使用 Claude Code CLI 的非交互模式作为 AI 代理。
 
 ```yaml
 agent:
   driver: claude
   claude:
     command: "claude"
-    args: ["--bare", "-p", "--output-format", "stream-json", "--verbose"]
+    args:
+      - "-p"
+      - "--output-format"
+      - "stream-json"
+      - "--verbose"
     timeout: 30m
 ```
 
-Claude driver 每次 prompt 启动一次 `claude -p` 进程，并通过 `--session-id` / `--resume` 维持 Claude Code 本地会话连续性。`--bare` 是 Claude Code 官方推荐的脚本模式，会跳过 hooks、plugins、MCP、自动记忆和 keychain 读取；如果使用该模式，请通过 `ANTHROPIC_API_KEY` 或 `--settings` 中的 `apiKeyHelper` 提供认证。若需要沿用本机 Claude Code 登录态，可从 `args` 中移除 `--bare`。
+**注意事项**：
 
-由于 Claude CLI 的 `-p` 参数需要把 prompt 作为进程参数传入，运行期间本机其他同权限进程可能通过 `ps` 或 `/proc` 看到 prompt 内容。不要把密钥放进 prompt；也不建议把 `ANTHROPIC_API_KEY` 等密钥写进配置文件的 `env` 字段，优先使用进程环境变量或 Claude Code settings 中的 `apiKeyHelper`。
+- 使用 `--bare` 参数可跳过 Claude Code 的 hooks、plugins、MCP 等功能
+- 通过 `ANTHROPIC_API_KEY` 环境变量提供认证
+- 当前版本不支持 `/permission` 和 `/question` 命令
 
-当前 Claude Code CLI 没有 OpenCode/Codex 那种可枚举、可回复的 mid-turn 权限/问题队列，所以 Claude driver 的等价范围限于 prompt、session/resume 和流式结果输出；`/permission` 和 `/question` 不会产生待处理项。需要自动授权工具时请通过 `args` 配置 Claude Code 的 `--allowedTools` 或 `--permission-mode`。`/session list` 只列出本进程创建过的 Claude sessions；如果已有 Claude Code session id，可以用 `/session attach <id>` 绑定并通过 `--resume` 继续。
+#### 4.2.2 Codex
 
-示例配置见 `configs/config.claude.example.yaml`。
-
-## Conversation store
-
-默认使用内存会话存储，进程重启后会清空。
-
-如果需要持久化 `/session attach` 绑定，可在配置中启用文件存储：
+使用 Codex app-server 作为 AI 代理。
 
 ```yaml
-conversation_store:
-  type: "file"
-  file_path: "data/conversation_store.json"
-  ttl: 24h
-  max_items: 1024
+agent:
+  driver: codex
+  codex:
+    command: "codex"
+    args:
+      - "app-server"
+      - "--listen"
+      - "stdio://"
+    timeout: 30m
+    initialize_timeout: 15s
 ```
 
-## Contribute
+#### 4.2.3 OpenCode
 
-## TODO List
+使用 OpenCode 作为 AI 代理（默认驱动）。
+
+```yaml
+agent:
+  driver: opencode
+  opencode:
+    base_url: "http://127.0.0.1:4096"
+    timeout: 10m
+    db_path: "/root/.local/share/opencode/opencode.db"
+```
+
+### 4.3 消息输出配置
+
+可以配置 AI 代理返回的消息类型：
+
+```yaml
+agent:
+  message_output:
+    include:
+      - answer # 回答内容
+      - reasoning # 思考过程
+      - action # 工具调用
+      - artifact # 代码变更
+      - diagnostic # 诊断信息
+```
+
+### 4.4 会话存储配置
+
+```yaml
+conversation:
+  store:
+    type: "sqlite" # memory, file, sqlite
+    path: "data/conversation.db" # 文件路径（file 和 sqlite 类型）
+    ttl: 24h # 会话过期时间
+    max_items: 1024 # 最大会话数
+  message:
+    include_user_identity: false # 是否在消息中包含用户身份
+```
+
+### 4.5 日志调试
+
+启用调试日志：
+
+```yaml
+log:
+  providers:
+    default:
+      - format: "json"
+        level: "debug"
+        verbosity: 3
+        output:
+          stdout:
+            enable: true
+```
+
+## 5. 命令参考
+
+Agent Bridge 支持以下斜杠命令：
+
+### 5.1 会话管理
+
+```bash
+# 创建新会话
+/new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]
+
+# 会话操作
+/session attach <agent-session-id>  # 绑定到现有会话
+/session detach                     # 解绑当前会话
+/session current                    # 显示当前会话信息
+/session list [--directory <path>]  # 列出会话
+```
+
+### 5.2 模型和代理
+
+```bash
+# 模型管理
+/model set <provider/model|model>  # 设置默认模型
+/model list                        # 列出可用模型
+
+# 代理管理
+/agent set <name>  # 设置默认代理
+/agent list        # 列出可用代理
+```
+
+### 5.3 工作目录
+
+```bash
+# 设置工作目录
+/directory set <path>
+```
+
+### 5.4 权限和问题
+
+```bash
+# 权限请求
+/permission <once|always|reject> [id|index]
+
+# 问题回答
+/question [id|index] <answer...>
+/question reject [id|index]
+```
+
+### 5.5 帮助
+
+```bash
+/help [new|session|model|agent|directory|permission|question]
+```
+
+## 6. TODO List
+
+### 6.1 平台支持
+
+- [x] OpenAI 兼容 API（支持任何 OpenAI SDK 客户端）
+- [x] Mattermost（WebSocket 模式）
+- [x] Mattermost（Webhook 模式）
+- [ ] Slack（计划中）
+
+### 6.2 AI 代理支持
+
+- [x] OpenCode（默认）
+- [x] Claude Code
+- [x] Codex
+- [ ] 其他 ACP 兼容代理（计划中）
+
+### 6.3 其他功能
 
 - [x] 支持 Message 命令列表
 - [x] 支持 agent 多轮响应（通过 reply 回调逐条推送）
 - [ ] 支持 SO 插件
-- [ ] 完善部署和使用教程
-- [x] 支持 Claude Code agent driver（通过 `claude -p --output-format stream-json`）
-- [x] 支持 Codex agent driver（通过 `codex app-server`）
-- [ ] 支持其他 agent 接入
+
+## 7. 贡献指南
+
+欢迎贡献代码、报告问题或提出改进建议！
+
+1. Fork 项目
+2. 创建功能分支：`git checkout -b feat/your-feature`
+3. 提交更改：`git commit -m 'feat: Add some feature'`
+4. 推送分支：`git push origin feat/your-feature`
+5. 创建 Pull Request
+
+## 8. 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+
