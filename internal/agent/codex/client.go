@@ -1430,4 +1430,4 @@ func stringRawID(id json.RawMessage) string {
 	return strings.TrimSpace(string(id))
 }
 
-var _ agent.Client = (*Client)(nil)
+var _ agent.Agent = (*Client)(nil)

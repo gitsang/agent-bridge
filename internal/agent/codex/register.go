@@ -10,7 +10,7 @@ import (
 func init() {
 	agent.Register(agent.Registration{
 		Name: "codex",
-		Factory: func(name string, configRaw any, infra agent.Infrastructure) (agent.Client, error) {
+		Factory: func(name string, configRaw any, infra agent.Infrastructure) (agent.Agent, error) {
 			configMap, ok := configRaw.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("codex: config must be a map")

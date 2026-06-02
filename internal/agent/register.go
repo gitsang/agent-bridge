@@ -11,8 +11,8 @@ type Infrastructure struct {
 	Logger *slog.Logger
 }
 
-// Factory creates an agent Client from configuration
-type Factory func(name string, configRaw any, infra Infrastructure) (Client, error)
+// Factory creates an agent Agent from configuration
+type Factory func(name string, configRaw any, infra Infrastructure) (Agent, error)
 
 // Registration represents a registered agent driver
 type Registration struct {

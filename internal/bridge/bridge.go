@@ -3,6 +3,7 @@ package bridge
 import (
 	"log/slog"
 
+	"github.com/gitsang/agent-bridge/internal/agent"
 	"github.com/gitsang/agent-bridge/internal/conversation"
 	"github.com/gitsang/agent-bridge/internal/model_cache"
 	"github.com/gitsang/agent-bridge/internal/types"
@@ -10,7 +11,7 @@ import (
 
 type AgentBridge struct {
 	logger               *slog.Logger
-	agentClient          Agent
+	agentClient          agent.Agent
 	messageOutputOptions types.MessageOutputOptions
 	conversationStore    conversation.ConversationStore
 	modelCache           *model_cache.Cache
@@ -35,7 +36,7 @@ func WithLogger(logger *slog.Logger) OptionFunc {
 	}
 }
 
-func WithAgentClient(client Agent) OptionFunc {
+func WithAgentClient(client agent.Agent) OptionFunc {
 	return func(target *AgentBridge) {
 		target.agentClient = client
 	}

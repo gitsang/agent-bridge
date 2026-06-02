@@ -814,4 +814,4 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-var _ agent.Client = (*Client)(nil)
+var _ agent.Agent = (*Client)(nil)
