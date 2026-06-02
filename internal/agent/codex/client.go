@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/types"
 )
 
@@ -1430,4 +1430,4 @@ func stringRawID(id json.RawMessage) string {
 	return strings.TrimSpace(string(id))
 }
 
-var _ agent.Agent = (*Client)(nil)
+var _ bridge.Agent = (*Client)(nil)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/gitsang/agent-bridge/internal/bridge"
 )
 
 // Infrastructure contains shared dependencies for agent drivers
@@ -12,7 +14,7 @@ type Infrastructure struct {
 }
 
 // Factory creates an agent Agent from configuration
-type Factory func(name string, configRaw any, infra Infrastructure) (Agent, error)
+type Factory func(name string, configRaw any, infra Infrastructure) (bridge.Agent, error)
 
 // Registration represents a registered agent driver
 type Registration struct {

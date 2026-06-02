@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/types"
 )
 
@@ -814,4 +814,4 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-var _ agent.Agent = (*Client)(nil)
+var _ bridge.Agent = (*Client)(nil)

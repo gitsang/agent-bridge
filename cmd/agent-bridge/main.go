@@ -182,7 +182,7 @@ func buildConversationStore(c Config) (conversation.Store, error) {
 	}
 }
 
-func buildAgentClient(c Config, logger *slog.Logger) (agent.Agent, error) {
+func buildAgentClient(c Config, logger *slog.Logger) (bridge.Agent, error) {
 	driver := strings.ToLower(strings.TrimSpace(c.Agent.Driver))
 	if driver == "" {
 		driver = "opencode"

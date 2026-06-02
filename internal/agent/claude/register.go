@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	"github.com/gitsang/agent-bridge/internal/bridge"
 )
 
 func init() {
 	agent.Register(agent.Registration{
 		Name: "claude",
-		Factory: func(name string, configRaw any, infra agent.Infrastructure) (agent.Agent, error) {
+		Factory: func(name string, configRaw any, infra agent.Infrastructure) (bridge.Agent, error) {
 			configMap, ok := configRaw.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("claude: config must be a map")
