@@ -43,7 +43,7 @@ type Options struct {
 	TransportFactory  TransportFactory
 }
 
-type Client struct {
+type Agent struct {
 	factory           TransportFactory
 	timeout           time.Duration
 	initializeTimeout time.Duration
@@ -141,7 +141,7 @@ func WithTransportFactory(factory TransportFactory) Option {
 	return func(target *Options) { target.TransportFactory = factory }
 }
 
-func NewClient(options ...Option) *Client {
+func NewClient(options ...Option) *Agent {
 	resolved := Options{
 		Logger:            slog.Default(),
 		Command:           "codex",
@@ -168,7 +168,7 @@ func NewClient(options ...Option) *Client {
 		}
 	}
 
-	return &Client{
+	return &Agent{
 		factory:           factory,
 		timeout:           resolved.Timeout,
 		initializeTimeout: resolved.InitializeTimeout,
@@ -178,7 +178,7 @@ func NewClient(options ...Option) *Client {
 	}
 }
 
-func (c *Client) ListModels(ctx context.Context, _ string) ([]types.ModelInfo, error) {
+func (c *Agent) ListModels(ctx context.Context, _ string) ([]types.ModelInfo, error) {
 	var resp struct {
 		Data []struct {
 			ID          string `json:"id"`
@@ -206,7 +206,7 @@ func (c *Client) ListModels(ctx context.Context, _ string) ([]types.ModelInfo, e
 	return models, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
+func (c *Agent) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
 		return types.ModelRef{}, fmt.Errorf("model is required")
@@ -236,11 +236,11 @@ func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (type
 	return types.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 }
 
-func (c *Client) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
+func (c *Agent) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
 	return []types.AgentInfo{{Name: "codex", Description: "Codex coding agent", Mode: "default"}}, nil
 }
 
-func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
+func (c *Agent) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
 	params := map[string]any{"limit": 100, "sourceKinds": []string{}}
 	if strings.TrimSpace(directory) != "" {
 		params["cwd"] = strings.TrimSpace(directory)
@@ -263,11 +263,11 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Se
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
+func (c *Agent) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	return c.ListSessions(ctx, "")
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
+func (c *Agent) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -295,7 +295,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Sessi
 	return &session, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
+func (c *Agent) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	params := map[string]any{"ephemeral": false}
 	if directory := strings.TrimSpace(request.Directory); directory != "" {
 		params["cwd"] = directory
@@ -323,7 +323,7 @@ func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionR
 	return &session, nil
 }
 
-func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
+func (c *Agent) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -354,7 +354,7 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Mes
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
+func (c *Agent) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
 	c.mu.Lock()
 	var latest *types.Message
 	if state := c.sessions[strings.TrimSpace(sessionID)]; state != nil {
@@ -396,7 +396,7 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 	return nil, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
+func (c *Agent) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -418,7 +418,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) runPrompt(ctx context.Context, sessionID, content string, options types.PromptOptions, doneCh chan struct{}, errCh chan error) {
+func (c *Agent) runPrompt(ctx context.Context, sessionID, content string, options types.PromptOptions, doneCh chan struct{}, errCh chan error) {
 	promptCtx := ctx
 	var cancel context.CancelFunc
 	if c.timeout > 0 {
@@ -486,7 +486,7 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, content string, optio
 	}()
 }
 
-func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
+func (c *Agent) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("codex session id is required")
@@ -527,7 +527,7 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 	return messages, nil
 }
 
-func (c *Client) ListPendingPermissions(_ context.Context, sessionID string) ([]types.PermissionRequest, error) {
+func (c *Agent) ListPendingPermissions(_ context.Context, sessionID string) ([]types.PermissionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -542,7 +542,7 @@ func (c *Client) ListPendingPermissions(_ context.Context, sessionID string) ([]
 	return requests, nil
 }
 
-func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
+func (c *Agent) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("codex session id is required")
 	}
@@ -579,7 +579,7 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	return c.respond(ctx, pending.rpcID, result)
 }
 
-func (c *Client) ListPendingQuestions(_ context.Context, sessionID string) ([]types.QuestionRequest, error) {
+func (c *Agent) ListPendingQuestions(_ context.Context, sessionID string) ([]types.QuestionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -594,15 +594,15 @@ func (c *Client) ListPendingQuestions(_ context.Context, sessionID string) ([]ty
 	return requests, nil
 }
 
-func (c *Client) ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error {
+func (c *Agent) ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error {
 	return c.replyQuestion(ctx, sessionID, requestID, answers, false)
 }
 
-func (c *Client) RejectQuestion(ctx context.Context, sessionID string, requestID string) error {
+func (c *Agent) RejectQuestion(ctx context.Context, sessionID string, requestID string) error {
 	return c.replyQuestion(ctx, sessionID, requestID, nil, true)
 }
 
-func (c *Client) replyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string, reject bool) error {
+func (c *Agent) replyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string, reject bool) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("codex session id is required")
 	}
@@ -639,7 +639,7 @@ func (c *Client) replyQuestion(ctx context.Context, sessionID string, requestID 
 	return c.respond(ctx, pending.rpcID, map[string]any{"answers": resultAnswers})
 }
 
-func (c *Client) call(ctx context.Context, method string, params any, target any) error {
+func (c *Agent) call(ctx context.Context, method string, params any, target any) error {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return err
@@ -647,7 +647,7 @@ func (c *Client) call(ctx context.Context, method string, params any, target any
 	return conn.call(ctx, method, params, target)
 }
 
-func (c *Client) respond(ctx context.Context, id json.RawMessage, result any) error {
+func (c *Agent) respond(ctx context.Context, id json.RawMessage, result any) error {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return err
@@ -655,7 +655,7 @@ func (c *Client) respond(ctx context.Context, id json.RawMessage, result any) er
 	return conn.respond(ctx, id, result)
 }
 
-func (c *Client) ensureConn(ctx context.Context) (*rpcConn, error) {
+func (c *Agent) ensureConn(ctx context.Context) (*rpcConn, error) {
 	c.mu.Lock()
 	if c.conn != nil {
 		conn := c.conn
@@ -706,7 +706,7 @@ func (c *Client) ensureConn(ctx context.Context) (*rpcConn, error) {
 	return conn, nil
 }
 
-func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
+func (c *Agent) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 	if msg.Method == "" {
 		return
 	}
@@ -799,7 +799,7 @@ func (c *Client) handleIncoming(ctx context.Context, msg jsonRPCMessage) {
 	}
 }
 
-func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
+func (c *Agent) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 	switch msg.Method {
 	case "item/commandExecution/requestApproval":
 		var params commandApprovalParams
@@ -866,7 +866,7 @@ func (c *Client) handleServerRequest(ctx context.Context, msg jsonRPCMessage) {
 	}
 }
 
-func (c *Client) respondError(ctx context.Context, id json.RawMessage, code int64, message string) error {
+func (c *Agent) respondError(ctx context.Context, id json.RawMessage, code int64, message string) error {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return err
@@ -874,7 +874,7 @@ func (c *Client) respondError(ctx context.Context, id json.RawMessage, code int6
 	return conn.respondError(ctx, id, code, message)
 }
 
-func (c *Client) storeSession(session types.Session) {
+func (c *Agent) storeSession(session types.Session) {
 	if strings.TrimSpace(session.ID) == "" {
 		return
 	}
@@ -893,7 +893,7 @@ func (c *Client) storeSession(session types.Session) {
 	}
 }
 
-func (c *Client) updateSessionDirectory(sessionID, directory string) {
+func (c *Agent) updateSessionDirectory(sessionID, directory string) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(directory) == "" {
 		return
 	}
@@ -903,7 +903,7 @@ func (c *Client) updateSessionDirectory(sessionID, directory string) {
 	state.Directory = strings.TrimSpace(directory)
 }
 
-func (c *Client) updateSessionModel(sessionID string, model types.ModelRef) {
+func (c *Agent) updateSessionModel(sessionID string, model types.ModelRef) {
 	if strings.TrimSpace(sessionID) == "" || model.IsZero() {
 		return
 	}
@@ -913,7 +913,7 @@ func (c *Client) updateSessionModel(sessionID string, model types.ModelRef) {
 	state.Model = model
 }
 
-func (c *Client) ensureTurn(sessionID, turnID string, model types.ModelRef) *turnState {
+func (c *Agent) ensureTurn(sessionID, turnID string, model types.ModelRef) *turnState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.ensureSessionLocked(sessionID)
@@ -932,7 +932,7 @@ func (c *Client) ensureTurn(sessionID, turnID string, model types.ModelRef) *tur
 	return turn
 }
 
-func (c *Client) ensureSessionLocked(sessionID string) *sessionState {
+func (c *Agent) ensureSessionLocked(sessionID string) *sessionState {
 	state := c.sessions[sessionID]
 	if state == nil {
 		state = &sessionState{ID: sessionID, Turns: map[string]*turnState{}}
@@ -941,7 +941,7 @@ func (c *Client) ensureSessionLocked(sessionID string) *sessionState {
 	return state
 }
 
-func (c *Client) appendTurnText(sessionID, turnID string, kind types.MessageContentKind, text string) {
+func (c *Agent) appendTurnText(sessionID, turnID string, kind types.MessageContentKind, text string) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" || text == "" {
 		return
 	}
@@ -962,7 +962,7 @@ func (c *Client) appendTurnText(sessionID, turnID string, kind types.MessageCont
 	}
 }
 
-func (c *Client) completeTurn(sessionID, turnID, status string, completedAt float64, err error) {
+func (c *Agent) completeTurn(sessionID, turnID, status string, completedAt float64, err error) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" {
 		return
 	}
@@ -975,7 +975,7 @@ func (c *Client) completeTurn(sessionID, turnID, status string, completedAt floa
 	turn.doneOnce.Do(func() { close(turn.Done) })
 }
 
-func (c *Client) interruptTurn(ctx context.Context, sessionID, turnID string) error {
+func (c *Agent) interruptTurn(ctx context.Context, sessionID, turnID string) error {
 	return c.call(ctx, "turn/interrupt", map[string]any{"threadId": sessionID, "turnId": turnID}, nil)
 }
 
@@ -1430,4 +1430,4 @@ func stringRawID(id json.RawMessage) string {
 	return strings.TrimSpace(string(id))
 }
 
-var _ bridge.Agent = (*Client)(nil)
+var _ bridge.Agent = (*Agent)(nil)
