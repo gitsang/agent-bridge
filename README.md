@@ -2,6 +2,10 @@
 
 # Agent Bridge
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a>
+</p>
+
 A bridge connecting AI agents with chat applications, enabling interaction with AI programming assistants (such as Claude Code, Codex, OpenCode) through chat software like Mattermost, OpenAI-compatible interfaces, etc.
 
 ## 1. Core Philosophy

@@ -2,6 +2,10 @@
 
 # Agent Bridge
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a>
+</p>
+
 一个连接 AI 代理与聊天应用的桥梁，让你可以通过 Mattermost、OpenAI 兼容接口等聊天软件与 AI 编程助手（如 Claude Code、Codex、OpenCode）进行交互。
 
 ## 1. 核心思想
@@ -435,4 +439,3 @@ Agent Bridge 支持以下斜杠命令：
 ## 8. 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
