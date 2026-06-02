@@ -34,11 +34,13 @@ Agent Bridge uses a **callback-driven** architecture rather than event-driven. T
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Chat Apps     │    │  Agent Bridge   │    │    AI Agents    │
-│  (Mattermost,   │◄──►│                 │◄──►│  (Claude Code,  │
+│  (Mattermost,   │───►│                 │───►│  (Claude Code,  │
 │   OpenAI API,   │    │  - Platform API │    │   Codex,        │
-│   etc.)         │    │  - Agent API    │    │   OpenCode)     │
-└─────────────────┘    │  - Bridge Core  │    └─────────────────┘
-                       └─────────────────┘
+│   etc.)         │◄─┐ │  - Agent API    │    │   OpenCode)     │
+└─────────────────┘  │ │  - Bridge Core  │    └─────────────────┘
+                     │ └─────────────────┘            │
+                     │                                │
+                     └────── reply callback ◄─────────┘
 ```
 
 **Message Flow**:
