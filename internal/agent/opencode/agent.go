@@ -86,7 +86,7 @@ type Options struct {
 	DBPath   string
 }
 
-type Client struct {
+type Agent struct {
 	logger  *slog.Logger
 	client  *ocsdk.Client
 	timeout time.Duration
@@ -120,7 +120,7 @@ func WithDBPath(dbPath string) Option {
 	}
 }
 
-func NewClient(baseURL string, options ...Option) *Client {
+func NewClient(baseURL string, options ...Option) *Agent {
 	resolved := Options{Timeout: 10 * time.Minute}
 
 	for _, apply := range options {
@@ -147,10 +147,10 @@ func NewClient(baseURL string, options ...Option) *Client {
 	}
 
 	sdkClient := ocsdk.NewClient(sdkOptions...)
-	return &Client{logger: resolved.Logger, client: sdkClient, timeout: timeout, dbPath: resolved.DBPath}
+	return &Agent{logger: resolved.Logger, client: sdkClient, timeout: timeout, dbPath: resolved.DBPath}
 }
 
-func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
+func (c *Agent) ListSessions(ctx context.Context, directory string) ([]types.Session, error) {
 	params := ocsdk.SessionListParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -171,7 +171,7 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]types.Se
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
+func (c *Agent) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	if c.dbPath == "" {
 		return nil, fmt.Errorf("db_path not configured for opencode client")
 	}
@@ -208,7 +208,7 @@ func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	return sessions, nil
 }
 
-func (c *Client) ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error) {
+func (c *Agent) ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error) {
 	params := ocsdk.AppProvidersParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -252,7 +252,7 @@ func (c *Client) ListModels(ctx context.Context, directory string) ([]types.Mode
 	return models, nil
 }
 
-func (c *Client) ListAgents(ctx context.Context, directory string) ([]types.AgentInfo, error) {
+func (c *Agent) ListAgents(ctx context.Context, directory string) ([]types.AgentInfo, error) {
 	params := ocsdk.AgentListParams{}
 	if strings.TrimSpace(directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(directory))
@@ -286,7 +286,7 @@ func (c *Client) ListAgents(ctx context.Context, directory string) ([]types.Agen
 	return agents, nil
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
+func (c *Agent) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -303,7 +303,7 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*types.Sessi
 	return &s, nil
 }
 
-func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]ocsdk.SessionMessagesResponse, error) {
+func (c *Agent) getSessionMessages(ctx context.Context, sessionID string) ([]ocsdk.SessionMessagesResponse, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -320,7 +320,7 @@ func (c *Client) getSessionMessages(ctx context.Context, sessionID string) ([]oc
 	return *resp, nil
 }
 
-func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
+func (c *Agent) GetMessages(ctx context.Context, sessionID string) ([]types.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -347,7 +347,7 @@ func (c *Client) GetMessages(ctx context.Context, sessionID string) ([]types.Mes
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
+func (c *Agent) GetLatestAssistantMessage(ctx context.Context, sessionID string) (*types.Message, error) {
 	raw, err := c.getSessionMessages(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -384,7 +384,7 @@ func (c *Client) GetLatestAssistantMessage(ctx context.Context, sessionID string
 	return nil, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
+func (c *Agent) CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	params := ocsdk.SessionNewParams{}
 	if strings.TrimSpace(request.Directory) != "" {
 		params.Directory = ocsdk.F(strings.TrimSpace(request.Directory))
@@ -404,7 +404,7 @@ func (c *Client) CreateSession(ctx context.Context, request types.CreateSessionR
 	return &s, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
+func (c *Agent) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -481,7 +481,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
+func (c *Agent) PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	var results []*types.Message
 	var retErr error
 	logger := c.logger.With(
@@ -551,7 +551,7 @@ func (c *Client) PollMessagesAfter(ctx context.Context, sessionID string, afterC
 	return results, nil
 }
 
-func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) ([]types.PermissionRequest, error) {
+func (c *Agent) ListPendingPermissions(ctx context.Context, sessionID string) ([]types.PermissionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("opencode session id is required")
@@ -592,7 +592,7 @@ func (c *Client) ListPendingPermissions(ctx context.Context, sessionID string) (
 	return requests, nil
 }
 
-func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
+func (c *Agent) ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("opencode session id is required")
 	}
@@ -613,7 +613,7 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID string, requestI
 	return err
 }
 
-func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]types.QuestionRequest, error) {
+func (c *Agent) ListPendingQuestions(ctx context.Context, sessionID string) ([]types.QuestionRequest, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 
 	var raw []rawQuestionRequest
@@ -648,7 +648,7 @@ func (c *Client) ListPendingQuestions(ctx context.Context, sessionID string) ([]
 	return requests, nil
 }
 
-func (c *Client) ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error {
+func (c *Agent) ReplyQuestion(ctx context.Context, sessionID string, requestID string, answers [][]string) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("opencode session id is required")
 	}
@@ -677,7 +677,7 @@ func (c *Client) ReplyQuestion(ctx context.Context, sessionID string, requestID 
 	return err
 }
 
-func (c *Client) RejectQuestion(ctx context.Context, sessionID string, requestID string) error {
+func (c *Agent) RejectQuestion(ctx context.Context, sessionID string, requestID string) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("opencode session id is required")
 	}
@@ -694,7 +694,7 @@ func (c *Client) RejectQuestion(ctx context.Context, sessionID string, requestID
 	return err
 }
 
-func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output types.MessageOutputOptions) (*types.Message, error) {
+func (c *Agent) buildPromptResult(ctx context.Context, fallbackSessionID string, completedAt float64, response *ocsdk.SessionMessageResponse, output types.MessageOutputOptions) (*types.Message, error) {
 	if response == nil {
 		return nil, fmt.Errorf("empty message response")
 	}
@@ -730,7 +730,7 @@ func (c *Client) buildPromptResult(ctx context.Context, fallbackSessionID string
 	return result, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
+func (c *Agent) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
 		return types.ModelRef{}, fmt.Errorf("model is required")

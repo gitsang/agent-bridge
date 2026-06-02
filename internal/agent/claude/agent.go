@@ -49,7 +49,7 @@ type Options struct {
 	ProcessFactory ProcessFactory
 }
 
-type Client struct {
+type Agent struct {
 	logger  *slog.Logger
 	command string
 	args    []string
@@ -109,7 +109,7 @@ func WithProcessFactory(factory ProcessFactory) Option {
 	return func(target *Options) { target.ProcessFactory = factory }
 }
 
-func NewClient(options ...Option) *Client {
+func NewClient(options ...Option) *Agent {
 	resolved := Options{
 		Logger:  slog.Default(),
 		Command: "claude",
@@ -135,7 +135,7 @@ func NewClient(options ...Option) *Client {
 	if factory == nil {
 		factory = newProcess
 	}
-	return &Client{
+	return &Agent{
 		logger:   resolved.Logger,
 		command:  resolved.Command,
 		args:     append([]string(nil), resolved.Args...),
@@ -146,7 +146,7 @@ func NewClient(options ...Option) *Client {
 	}
 }
 
-func (c *Client) ListModels(context.Context, string) ([]types.ModelInfo, error) {
+func (c *Agent) ListModels(context.Context, string) ([]types.ModelInfo, error) {
 	return []types.ModelInfo{
 		{ModelRef: types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "haiku"}, ProviderName: "Claude", ModelName: "Claude Haiku"},
 		{ModelRef: types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "opus"}, ProviderName: "Claude", ModelName: "Claude Opus"},
@@ -154,7 +154,7 @@ func (c *Client) ListModels(context.Context, string) ([]types.ModelInfo, error) 
 	}, nil
 }
 
-func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
+func (c *Agent) ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error) {
 	resolvedModel := strings.TrimSpace(spec)
 	if resolvedModel == "" {
 		return types.ModelRef{ProviderID: ClaudeProviderID, ModelID: "sonnet"}, nil
@@ -183,11 +183,11 @@ func (c *Client) ResolveModel(ctx context.Context, spec, directory string) (type
 	return types.ModelRef{}, fmt.Errorf("model not found: %s", resolvedModel)
 }
 
-func (c *Client) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
+func (c *Agent) ListAgents(context.Context, string) ([]types.AgentInfo, error) {
 	return []types.AgentInfo{{Name: "claude-code", Description: "Claude Code coding agent", Mode: "default"}}, nil
 }
 
-func (c *Client) ListSessions(context.Context, string) ([]types.Session, error) {
+func (c *Agent) ListSessions(context.Context, string) ([]types.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	sessions := make([]types.Session, 0, len(c.sessions))
@@ -203,11 +203,11 @@ func (c *Client) ListSessions(context.Context, string) ([]types.Session, error) 
 	return sessions, nil
 }
 
-func (c *Client) ListAllSessions(ctx context.Context) ([]types.Session, error) {
+func (c *Agent) ListAllSessions(ctx context.Context) ([]types.Session, error) {
 	return c.ListSessions(ctx, "")
 }
 
-func (c *Client) GetSession(_ context.Context, sessionID string) (*types.Session, error) {
+func (c *Agent) GetSession(_ context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -227,7 +227,7 @@ func (c *Client) GetSession(_ context.Context, sessionID string) (*types.Session
 	return &session, nil
 }
 
-func (c *Client) CreateSession(_ context.Context, request types.CreateSessionRequest) (*types.Session, error) {
+func (c *Agent) CreateSession(_ context.Context, request types.CreateSessionRequest) (*types.Session, error) {
 	sessionID, err := newSessionID()
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func (c *Client) CreateSession(_ context.Context, request types.CreateSessionReq
 	}, nil
 }
 
-func (c *Client) GetMessages(_ context.Context, sessionID string) ([]types.Message, error) {
+func (c *Agent) GetMessages(_ context.Context, sessionID string) ([]types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -273,7 +273,7 @@ func (c *Client) GetMessages(_ context.Context, sessionID string) ([]types.Messa
 	return messages, nil
 }
 
-func (c *Client) GetLatestAssistantMessage(_ context.Context, sessionID string) (*types.Message, error) {
+func (c *Agent) GetLatestAssistantMessage(_ context.Context, sessionID string) (*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -297,7 +297,7 @@ func (c *Client) GetLatestAssistantMessage(_ context.Context, sessionID string) 
 	return latest, nil
 }
 
-func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
+func (c *Agent) Prompt(ctx context.Context, sessionID string, prompt string, optfs ...types.PromptOptionFunc) (*types.PromptHandle, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -347,7 +347,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, prompt string, op
 	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
-func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
+func (c *Agent) PollMessagesAfter(_ context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
 		return nil, fmt.Errorf("claude session id is required")
@@ -373,27 +373,27 @@ func (c *Client) PollMessagesAfter(_ context.Context, sessionID string, afterCom
 	return messages, nil
 }
 
-func (c *Client) ListPendingPermissions(context.Context, string) ([]types.PermissionRequest, error) {
+func (c *Agent) ListPendingPermissions(context.Context, string) ([]types.PermissionRequest, error) {
 	return []types.PermissionRequest{}, nil
 }
 
-func (c *Client) ReplyPermission(context.Context, string, string, types.PermissionReply) error {
+func (c *Agent) ReplyPermission(context.Context, string, string, types.PermissionReply) error {
 	return types.ErrInteractionNoLongerPending
 }
 
-func (c *Client) ListPendingQuestions(context.Context, string) ([]types.QuestionRequest, error) {
+func (c *Agent) ListPendingQuestions(context.Context, string) ([]types.QuestionRequest, error) {
 	return []types.QuestionRequest{}, nil
 }
 
-func (c *Client) ReplyQuestion(context.Context, string, string, [][]string) error {
+func (c *Agent) ReplyQuestion(context.Context, string, string, [][]string) error {
 	return types.ErrInteractionNoLongerPending
 }
 
-func (c *Client) RejectQuestion(context.Context, string, string) error {
+func (c *Agent) RejectQuestion(context.Context, string, string) error {
 	return types.ErrInteractionNoLongerPending
 }
 
-func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, directory string, model types.ModelRef, firstPrompt bool, doneCh chan struct{}, errCh chan error) {
+func (c *Agent) runPrompt(ctx context.Context, sessionID, turnID, content, directory string, model types.ModelRef, firstPrompt bool, doneCh chan struct{}, errCh chan error) {
 	startedAt := time.Now()
 	var finalErr error
 	defer func() {
@@ -477,7 +477,7 @@ func (c *Client) runPrompt(ctx context.Context, sessionID, turnID, content, dire
 	close(doneCh)
 }
 
-func (c *Client) buildArgs(sessionID, content string, model types.ModelRef, firstPrompt bool) []string {
+func (c *Agent) buildArgs(sessionID, content string, model types.ModelRef, firstPrompt bool) []string {
 	args := append([]string(nil), c.args...)
 	if strings.TrimSpace(sessionID) != "" {
 		if firstPrompt {
@@ -493,7 +493,7 @@ func (c *Client) buildArgs(sessionID, content string, model types.ModelRef, firs
 	return args
 }
 
-func (c *Client) readStream(stdout io.Reader, sessionID, turnID string) error {
+func (c *Agent) readStream(stdout io.Reader, sessionID, turnID string) error {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -521,7 +521,7 @@ func (c *Client) readStream(stdout io.Reader, sessionID, turnID string) error {
 	return scanner.Err()
 }
 
-func (c *Client) applyEvent(sessionID, turnID string, event claudeEvent) error {
+func (c *Agent) applyEvent(sessionID, turnID string, event claudeEvent) error {
 	if event.Type == "error" {
 		message := "claude stream error"
 		if event.Error != nil && strings.TrimSpace(event.Error.Message) != "" {
@@ -555,7 +555,7 @@ func (c *Client) applyEvent(sessionID, turnID string, event claudeEvent) error {
 	return nil
 }
 
-func (c *Client) finishPrompt(sessionID string, success bool) {
+func (c *Agent) finishPrompt(sessionID string, success bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if state := c.sessions[sessionID]; state != nil {
@@ -566,7 +566,7 @@ func (c *Client) finishPrompt(sessionID string, success bool) {
 	}
 }
 
-func (c *Client) completeTurn(sessionID, turnID string, err error) {
+func (c *Agent) completeTurn(sessionID, turnID string, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := c.sessions[sessionID]
@@ -583,7 +583,7 @@ func (c *Client) completeTurn(sessionID, turnID string, err error) {
 	state.UpdatedAt = time.Unix(0, int64(now*float64(time.Second)))
 }
 
-func (c *Client) setTurnError(sessionID, turnID string, err error) {
+func (c *Agent) setTurnError(sessionID, turnID string, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	turn := c.turnLocked(sessionID, turnID)
@@ -592,7 +592,7 @@ func (c *Client) setTurnError(sessionID, turnID string, err error) {
 	}
 }
 
-func (c *Client) appendTurnText(sessionID, turnID, text string) {
+func (c *Agent) appendTurnText(sessionID, turnID, text string) {
 	if text == "" {
 		return
 	}
@@ -604,7 +604,7 @@ func (c *Client) appendTurnText(sessionID, turnID, text string) {
 	}
 }
 
-func (c *Client) appendTurnTextIfEmpty(sessionID, turnID, text string) {
+func (c *Agent) appendTurnTextIfEmpty(sessionID, turnID, text string) {
 	if text == "" {
 		return
 	}
@@ -616,7 +616,7 @@ func (c *Client) appendTurnTextIfEmpty(sessionID, turnID, text string) {
 	}
 }
 
-func (c *Client) updateTurnModel(sessionID, turnID, modelID string) {
+func (c *Agent) updateTurnModel(sessionID, turnID, modelID string) {
 	if strings.TrimSpace(modelID) == "" {
 		return
 	}
@@ -628,7 +628,7 @@ func (c *Client) updateTurnModel(sessionID, turnID, modelID string) {
 	}
 }
 
-func (c *Client) turnLocked(sessionID, turnID string) *turnState {
+func (c *Agent) turnLocked(sessionID, turnID string) *turnState {
 	state := c.sessions[sessionID]
 	if state == nil {
 		return nil
@@ -814,4 +814,4 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-var _ bridge.Agent = (*Client)(nil)
+var _ bridge.Agent = (*Agent)(nil)
