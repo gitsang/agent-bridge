@@ -8,6 +8,8 @@
 
 A bridge connecting AI agents with chat applications, enabling interaction with AI programming assistants (such as Claude Code, Codex, OpenCode) through chat software like Mattermost, OpenAI-compatible interfaces, etc.
 
+On your phone, continue the unfinished work from your computer.
+
 ## 1. Core Philosophy
 
 ### 1.1 Design Principles
@@ -19,7 +21,15 @@ The core design philosophy of Agent Bridge is **separation of concerns** and **u
 3. **Streaming Response Support**: Supports streaming output, allowing users to see AI agent's thinking process and generation results in real-time
 4. **Session State Management**: Maintains binding relationships between chat sessions and AI agent sessions, supporting multi-turn conversations and session switching
 
-### 1.2 Architecture Overview
+### 1.2 Callback-Driven Lifecycle Management
+
+Agent Bridge uses a **callback-driven** architecture rather than event-driven. This means:
+
+- **Platform only needs to call `HandleFunc` once**: No need to manage event channel lifecycle, no need for persistent goroutines listening for events, no need to handle channel closures
+- **Agent directly invokes callbacks**: When the agent wants to reply, it directly calls the `reply` callback — Platform doesn't need to actively poll or wait
+- **Purer separation of concerns**: Platform only handles message sending/receiving, without needing to understand Agent's internal state and lifecycle
+
+### 1.3 Architecture Overview
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -426,6 +436,8 @@ Agent Bridge supports the following slash commands:
 - [x] Support agent multi-turn responses (pushing one by one through reply callback)
 - [ ] Support SO/gRPC plugins
 - [ ] Support Capability Claim
+- [ ] Agent should not declare polling interfaces; for systems that don't support event push, polling should be wrapped to provide event-push semantics
+- [ ] Use event callbacks instead of Message callbacks
 
 ## 7. Contributing Guide
 
