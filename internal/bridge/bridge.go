@@ -13,7 +13,7 @@ type AgentBridge struct {
 	logger               *slog.Logger
 	agent                agent.Agent
 	messageOutputOptions types.MessageOutputOptions
-	conversationStore    conversation.ConversationStore
+	conversationStore    conversation.Store
 	modelCache           *model_cache.Cache
 	includeUserIdentity  bool
 }
@@ -48,7 +48,7 @@ func WithMessageOutputOptions(options types.MessageOutputOptions) OptionFunc {
 	}
 }
 
-func WithConversationStore(store conversation.ConversationStore) OptionFunc {
+func WithConversationStore(store conversation.Store) OptionFunc {
 	return func(target *AgentBridge) {
 		target.conversationStore = store
 	}

@@ -22,7 +22,7 @@ type ConversationState struct {
 	LastSeenAt       time.Time
 }
 
-type ConversationStore interface {
+type Store interface {
 	Get(chatSessionID string) (ConversationState, bool)
 	PutBinding(chatSessionID string, agentSessionID string)
 	SetDefaultModel(chatSessionID string, model string)

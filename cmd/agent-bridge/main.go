@@ -168,7 +168,7 @@ func Run(cmd *cobra.Command, _ []string) error {
 	return group.Wait()
 }
 
-func buildConversationStore(c Config) (conversation.ConversationStore, error) {
+func buildConversationStore(c Config) (conversation.Store, error) {
 	storeType := strings.ToLower(strings.TrimSpace(c.Conversation.Store.Type))
 	switch storeType {
 	case "", "memory":
