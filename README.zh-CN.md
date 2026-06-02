@@ -424,7 +424,8 @@ Agent Bridge 支持以下斜杠命令：
 
 - [x] 支持 Message 命令列表
 - [x] 支持 agent 多轮响应（通过 reply 回调逐条推送）
-- [ ] 支持 SO 插件
+- [ ] 支持 SO/gRPC 插件
+- [ ] 支持 Capability 声明
 
 ## 7. 贡献指南
 

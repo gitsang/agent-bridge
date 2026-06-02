@@ -424,7 +424,8 @@ Agent Bridge supports the following slash commands:
 
 - [x] Support Message command list
 - [x] Support agent multi-turn responses (pushing one by one through reply callback)
-- [ ] Support SO plugins
+- [ ] Support SO/gRPC plugins
+- [ ] Support Capability Claim
 
 ## 7. Contributing Guide
 
