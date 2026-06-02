@@ -2,50 +2,50 @@
 
 # Agent Bridge
 
-一个连接 AI 代理与聊天应用的桥梁，让你可以通过 Mattermost、OpenAI 兼容接口等聊天软件与 AI 编程助手（如 Claude Code、Codex、OpenCode）进行交互。
+A bridge connecting AI agents with chat applications, enabling interaction with AI programming assistants (such as Claude Code, Codex, OpenCode) through chat software like Mattermost, OpenAI-compatible interfaces, etc.
 
-## 1. 核心思想
+## 1. Core Philosophy
 
-### 1.1 设计理念
+### 1.1 Design Principles
 
-Agent Bridge 的核心设计思想是**分离关注点**和**统一抽象**：
+The core design philosophy of Agent Bridge is **separation of concerns** and **unified abstraction**:
 
-1. **平台与代理分离**：聊天平台只负责消息的收发，AI 代理只负责代码生成和交互，两者通过 Agent Bridge 进行连接
-2. **统一接口设计**：所有聊天平台实现相同的 `Platform` 接口，所有 AI 代理实现相同的 `Agent` 接口，实现即插即用
-3. **流式响应支持**：支持流式输出，让用户可以实时看到 AI 代理的思考过程和生成结果
-4. **会话状态管理**：维护聊天会话与 AI 代理会话的绑定关系，支持多轮对话和会话切换
+1. **Platform-Agent Separation**: Chat platforms only handle message sending/receiving, AI agents only handle code generation and interaction, with Agent Bridge connecting them
+2. **Unified Interface Design**: All chat platforms implement the same `Platform` interface, all AI agents implement the same `Agent` interface, enabling plug-and-play functionality
+3. **Streaming Response Support**: Supports streaming output, allowing users to see AI agent's thinking process and generation results in real-time
+4. **Session State Management**: Maintains binding relationships between chat sessions and AI agent sessions, supporting multi-turn conversations and session switching
 
-### 1.2 架构概览
+### 1.2 Architecture Overview
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   聊天应用      │    │  Agent Bridge   │    │    AI 代理      │
+│   Chat Apps     │    │  Agent Bridge   │    │    AI Agents    │
 │  (Mattermost,   │◄──►│                 │◄──►│  (Claude Code,  │
-│   OpenAI API,   │    │  - Platform 接口│    │   Codex,        │
-│   etc.)         │    │  - Agent 接口   │    │   OpenCode)     │
-└─────────────────┘    │  - Bridge 核心  │    └─────────────────┘
+│   OpenAI API,   │    │  - Platform API │    │   Codex,        │
+│   etc.)         │    │  - Agent API    │    │   OpenCode)     │
+└─────────────────┘    │  - Bridge Core  │    └─────────────────┘
                        └─────────────────┘
 ```
 
-**消息流向**：
+**Message Flow**:
 
-1. 用户在聊天应用中发送消息
-2. Platform 接收消息并转换为统一格式
-3. Bridge 处理消息（解析命令、管理会话）
-4. Agent 接收 prompt 并调用 AI 代理
-5. AI 代理返回结果，通过 reply 回调逐条推送
-6. Platform 将结果发送回聊天应用
+1. User sends a message in the chat application
+2. Platform receives the message and converts it to a unified format
+3. Bridge processes the message (parses commands, manages sessions)
+4. Agent receives the prompt and calls the AI agent
+5. AI agent returns results, pushing them one by one through the reply callback
+6. Platform sends the results back to the chat application
 
-## 2. 核心概念
+## 2. Core Concepts
 
-### 2.1 Platform（平台）
+### 2.1 Platform
 
-Platform 是聊天应用的抽象层，负责：
+Platform is an abstraction layer for chat applications, responsible for:
 
-- 接收来自聊天应用的消息
-- 将消息转换为统一的 `bridge.Message` 格式
-- 调用 `HandleFunc` 处理消息
-- 将 AI 代理的回复发送回聊天应用
+- Receiving messages from chat applications
+- Converting messages to the unified `bridge.Message` format
+- Calling `HandleFunc` to process messages
+- Sending AI agent replies back to the chat application
 
 ```go
 type Platform interface {
@@ -55,42 +55,42 @@ type Platform interface {
 }
 ```
 
-**HandleFunc 签名**：
+**HandleFunc Signature**:
 
 ```go
 type HandleFunc func(ctx context.Context, req *bridge.Message, reply bridge.ReplyFunc) error
 ```
 
-`reply` 是一个回调函数，AI 代理每产出一条回复就会调用一次。对于支持流式输出的聊天平台，可以在 `reply` 被调用时立即发送；对于只需要最终结果的场景，可以在回调里暂存消息，等 handle 返回后再使用。
+`reply` is a callback function that is called each time the AI agent produces a response. For chat platforms supporting streaming output, messages can be sent immediately when `reply` is called; for scenarios requiring only final results, messages can be temporarily stored in the callback and used after the handle returns.
 
-### 2.2 Agent（代理）
+### 2.2 Agent
 
-Agent 是 AI 代理的抽象层，负责：
+Agent is an abstraction layer for AI agents, responsible for:
 
-- 管理 AI 代理会话
-- 发送 prompt 并获取响应
-- 处理权限请求和用户问题
-- 获取会话历史和模型信息
+- Managing AI agent sessions
+- Sending prompts and retrieving responses
+- Handling permission requests and user questions
+- Retrieving session history and model information
 
 ```go
 type Agent interface {
-    // 模型管理
+    // Model management
     ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error)
     ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error)
 
-    // 代理管理
+    // Agent management
     ListAgents(ctx context.Context, directory string) ([]types.AgentInfo, error)
 
-    // 会话管理
+    // Session management
     ListSessions(ctx context.Context, directory string) ([]types.Session, error)
     CreateSession(ctx context.Context, request types.CreateSessionRequest) (*types.Session, error)
     GetSession(ctx context.Context, sessionID string) (*types.Session, error)
 
-    // 消息交互
+    // Message interaction
     Prompt(ctx context.Context, sessionID string, prompt string, opts ...types.PromptOptionFunc) (*types.PromptHandle, error)
     PollMessagesAfter(ctx context.Context, sessionID string, afterCompletedAt float64, output types.MessageOutputOptions) ([]*types.Message, error)
 
-    // 权限和问题处理
+    // Permission and question handling
     ListPendingPermissions(ctx context.Context, sessionID string) ([]types.PermissionRequest, error)
     ReplyPermission(ctx context.Context, sessionID string, requestID string, reply types.PermissionReply) error
     ListPendingQuestions(ctx context.Context, sessionID string) ([]types.QuestionRequest, error)
@@ -98,35 +98,35 @@ type Agent interface {
 }
 ```
 
-### 2.3 Bridge（桥梁）
+### 2.3 Bridge
 
-Bridge 是核心组件，负责：
+Bridge is the core component, responsible for:
 
-- 解析用户输入（普通消息或斜杠命令）
-- 管理会话绑定关系
-- 处理斜杠命令（`/new`、`/session`、`/model` 等）
-- 协调 Platform 和 Agent 的交互
+- Parsing user input (regular messages or slash commands)
+- Managing session binding relationships
+- Handling slash commands (`/new`, `/session`, `/model`, etc.)
+- Coordinating interaction between Platform and Agent
 
-## 3. 快速开始
+## 3. Quick Start
 
-### 3.1 安装
+### 3.1 Installation
 
 ```bash
-# 从源码编译
+# Build from source
 git clone https://github.com/gitsang/agent-bridge.git
 cd agent-bridge
 go build -o agent-bridge ./cmd/agent-bridge
 
-# 或使用 go install
+# Or use go install
 go install github.com/gitsang/agent-bridge/cmd/agent-bridge@latest
 ```
 
-### 3.2 配置
+### 3.2 Configuration
 
-创建配置文件 `config.yaml`：
+Create configuration file `config.yaml`:
 
 ```yaml
-# 日志配置
+# Logging configuration
 log:
   handlers:
     default: "default"
@@ -138,25 +138,25 @@ log:
           stdout:
             enable: true
 
-# 平台配置
+# Platform configuration
 platforms:
-  # OpenAI 兼容 API（支持任何 OpenAI SDK 客户端）
+  # OpenAI-compatible API (supports any OpenAI SDK client)
   openai-compatible:
     openai-compatible:
       listen: ":24368"
 
-  # Mattermost 集成
+  # Mattermost integration
   mattermost:
     mattermost:
-      mode: "websocket" # webhook 或 websocket
+      mode: "websocket" # webhook or websocket
       websocket:
         server_url: "https://mattermost.example.com"
         ws_url: "wss://mattermost.example.com"
         access_token: "your-bot-token"
 
-# AI 代理配置
+# AI agent configuration
 agent:
-  driver: claude # 支持: opencode, codex, claude
+  driver: claude # Supported: opencode, codex, claude
   claude:
     command: "claude"
     args:
@@ -166,7 +166,7 @@ agent:
       - "--verbose"
     timeout: 30m
 
-# 会话存储配置
+# Session storage configuration
 conversation:
   store:
     type: "sqlite" # memory, file, sqlite
@@ -175,20 +175,20 @@ conversation:
     max_items: 1024
 ```
 
-### 3.3 启动
+### 3.3 Startup
 
 ```bash
-# 使用配置文件启动
+# Start with configuration file
 ./agent-bridge --config config.yaml
 
-# 或使用环境变量
+# Or use environment variables
 export ANTHROPIC_API_KEY="your-api-key"
 ./agent-bridge --config config.yaml
 ```
 
-### 3.4 测试
+### 3.4 Testing
 
-使用 curl 测试 OpenAI 兼容 API：
+Test the OpenAI-compatible API using curl:
 
 ```bash
 curl http://localhost:24368/v1/chat/completions \
@@ -201,40 +201,40 @@ curl http://localhost:24368/v1/chat/completions \
   }'
 ```
 
-## 4. 配置说明
+## 4. Configuration Guide
 
-### 4.1 平台配置
+### 4.1 Platform Configuration
 
-#### 4.1.1 OpenAI 兼容 API
+#### 4.1.1 OpenAI-compatible API
 
-提供标准的 OpenAI Chat Completions API 接口，支持任何 OpenAI SDK 客户端。
+Provides standard OpenAI Chat Completions API interface, supporting any OpenAI SDK client.
 
 ```yaml
 platforms:
   openai-compatible:
     openai-compatible:
-      listen: ":24368" # 监听地址
+      listen: ":24368" # Listen address
 ```
 
-#### 4.1.2 Mattermost（WebSocket）
+#### 4.1.2 Mattermost (WebSocket)
 
-适用于 Mattermost 无法直接访问 Agent Bridge 的场景（如内网环境），通过 WebSocket 主动连接 Mattermost。
+Suitable for scenarios where Mattermost cannot directly access Agent Bridge (such as internal network environments), actively connecting to Mattermost via WebSocket.
 
 ```yaml
 platforms:
   mattermost:
     mattermost:
       mode: "websocket"
-      command_prefix: "!" # 命令前缀，默认 "/"
+      command_prefix: "!" # Command prefix, default "/"
       websocket:
         server_url: "https://mattermost.example.com"
         ws_url: "wss://mattermost.example.com"
         access_token: "bot-access-token"
 ```
 
-#### 4.1.3 Mattermost（Webhook）
+#### 4.1.3 Mattermost (Webhook)
 
-通过 Mattermost 的 Outgoing Webhook 或 Slash Command 接收消息。
+Receives messages through Mattermost's Outgoing Webhook or Slash Command.
 
 ```yaml
 platforms:
@@ -248,11 +248,11 @@ platforms:
           - "mattermost.example.com"
 ```
 
-### 4.2 AI 代理配置
+### 4.2 AI Agent Configuration
 
 #### 4.2.1 Claude Code
 
-使用 Claude Code CLI 的非交互模式作为 AI 代理。
+Uses Claude Code CLI's non-interactive mode as the AI agent.
 
 ```yaml
 agent:
@@ -267,15 +267,15 @@ agent:
     timeout: 30m
 ```
 
-**注意事项**：
+**Notes**:
 
-- 使用 `--bare` 参数可跳过 Claude Code 的 hooks、plugins、MCP 等功能
-- 通过 `ANTHROPIC_API_KEY` 环境变量提供认证
-- 当前版本不支持 `/permission` 和 `/question` 命令
+- Use `--bare` parameter to skip Claude Code's hooks, plugins, MCP and other features
+- Authentication via `ANTHROPIC_API_KEY` environment variable
+- Current version does not support `/permission` and `/question` commands
 
 #### 4.2.2 Codex
 
-使用 Codex app-server 作为 AI 代理。
+Uses Codex app-server as the AI agent.
 
 ```yaml
 agent:
@@ -292,7 +292,7 @@ agent:
 
 #### 4.2.3 OpenCode
 
-使用 OpenCode 作为 AI 代理（默认驱动）。
+Uses OpenCode as the AI agent (default driver).
 
 ```yaml
 agent:
@@ -303,37 +303,37 @@ agent:
     db_path: "/root/.local/share/opencode/opencode.db"
 ```
 
-### 4.3 消息输出配置
+### 4.3 Message Output Configuration
 
-可以配置 AI 代理返回的消息类型：
+You can configure the types of messages returned by the AI agent:
 
 ```yaml
 agent:
   message_output:
     include:
-      - answer # 回答内容
-      - reasoning # 思考过程
-      - action # 工具调用
-      - artifact # 代码变更
-      - diagnostic # 诊断信息
+      - answer # Answer content
+      - reasoning # Thinking process
+      - action # Tool calls
+      - artifact # Code changes
+      - diagnostic # Diagnostic information
 ```
 
-### 4.4 会话存储配置
+### 4.4 Session Storage Configuration
 
 ```yaml
 conversation:
   store:
     type: "sqlite" # memory, file, sqlite
-    path: "data/conversation.db" # 文件路径（file 和 sqlite 类型）
-    ttl: 24h # 会话过期时间
-    max_items: 1024 # 最大会话数
+    path: "data/conversation.db" # File path (for file and sqlite types)
+    ttl: 24h # Session expiration time
+    max_items: 1024 # Maximum number of sessions
   message:
-    include_user_identity: false # 是否在消息中包含用户身份
+    include_user_identity: false # Whether to include user identity in messages
 ```
 
-### 4.5 日志调试
+### 4.5 Logging and Debugging
 
-启用调试日志：
+Enable debug logging:
 
 ```yaml
 log:
@@ -347,54 +347,54 @@ log:
             enable: true
 ```
 
-## 5. 命令参考
+## 5. Command Reference
 
-Agent Bridge 支持以下斜杠命令：
+Agent Bridge supports the following slash commands:
 
-### 5.1 会话管理
+### 5.1 Session Management
 
 ```bash
-# 创建新会话
+# Create new session
 /new [--model <provider/model|model>] [--agent <name>] [--directory <path>] [--title <title>]
 
-# 会话操作
-/session attach <agent-session-id>  # 绑定到现有会话
-/session detach                     # 解绑当前会话
-/session current                    # 显示当前会话信息
-/session list [--directory <path>]  # 列出会话
+# Session operations
+/session attach <agent-session-id>  # Bind to existing session
+/session detach                     # Unbind current session
+/session current                    # Show current session information
+/session list [--directory <path>]  # List sessions
 ```
 
-### 5.2 模型和代理
+### 5.2 Models and Agents
 
 ```bash
-# 模型管理
-/model set <provider/model|model>  # 设置默认模型
-/model list                        # 列出可用模型
+# Model management
+/model set <provider/model|model>  # Set default model
+/model list                        # List available models
 
-# 代理管理
-/agent set <name>  # 设置默认代理
-/agent list        # 列出可用代理
+# Agent management
+/agent set <name>  # Set default agent
+/agent list        # List available agents
 ```
 
-### 5.3 工作目录
+### 5.3 Working Directory
 
 ```bash
-# 设置工作目录
+# Set working directory
 /directory set <path>
 ```
 
-### 5.4 权限和问题
+### 5.4 Permissions and Questions
 
 ```bash
-# 权限请求
+# Permission requests
 /permission <once|always|reject> [id|index]
 
-# 问题回答
+# Question answers
 /question [id|index] <answer...>
 /question reject [id|index]
 ```
 
-### 5.5 帮助
+### 5.5 Help
 
 ```bash
 /help [new|session|model|agent|directory|permission|question]
@@ -402,37 +402,36 @@ Agent Bridge 支持以下斜杠命令：
 
 ## 6. TODO List
 
-### 6.1 平台支持
+### 6.1 Platform Support
 
-- [x] OpenAI 兼容 API（支持任何 OpenAI SDK 客户端）
-- [x] Mattermost（WebSocket 模式）
-- [x] Mattermost（Webhook 模式）
-- [ ] Slack（计划中）
+- [x] OpenAI-compatible API (supports any OpenAI SDK client)
+- [x] Mattermost (WebSocket mode)
+- [x] Mattermost (Webhook mode)
+- [ ] Slack (planned)
 
-### 6.2 AI 代理支持
+### 6.2 AI Agent Support
 
-- [x] OpenCode（默认）
+- [x] OpenCode (default)
 - [x] Claude Code
 - [x] Codex
-- [ ] 其他 ACP 兼容代理（计划中）
+- [ ] Other ACP-compatible agents (planned)
 
-### 6.3 其他功能
+### 6.3 Other Features
 
-- [x] 支持 Message 命令列表
-- [x] 支持 agent 多轮响应（通过 reply 回调逐条推送）
-- [ ] 支持 SO 插件
+- [x] Support Message command list
+- [x] Support agent multi-turn responses (pushing one by one through reply callback)
+- [ ] Support SO plugins
 
-## 7. 贡献指南
+## 7. Contributing Guide
 
-欢迎贡献代码、报告问题或提出改进建议！
+Welcome to contribute code, report issues, or suggest improvements!
 
-1. Fork 项目
-2. 创建功能分支：`git checkout -b feat/your-feature`
-3. 提交更改：`git commit -m 'feat: Add some feature'`
-4. 推送分支：`git push origin feat/your-feature`
-5. 创建 Pull Request
+1. Fork the project
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit changes: `git commit -m 'feat: Add some feature'`
+4. Push the branch: `git push origin feat/your-feature`
+5. Create a Pull Request
 
-## 8. 许可证
+## 8. License
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
