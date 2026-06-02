@@ -165,7 +165,7 @@ func (c *AgentBridge) Handle(ctx context.Context, req *Message, reply ReplyFunc)
 		return NewError(http.StatusBadRequest, "request is required")
 	}
 
-	if c.agentClient == nil {
+	if c.agent == nil {
 		return NewError(http.StatusInternalServerError, "agent client is required")
 	}
 
@@ -205,7 +205,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	resolvedSessionID := firstNonEmpty(strings.TrimSpace(req.Agent.SessionID), strings.TrimSpace(state.AgentSessionID))
 
 	if resolvedSessionID == "" {
-		createdSession, err := c.agentClient.CreateSession(ctx, types.CreateSessionRequest{
+		createdSession, err := c.agent.CreateSession(ctx, types.CreateSessionRequest{
 			Title:     strings.TrimSpace(req.Agent.Title),
 			Directory: resolvedDirectory,
 		})
@@ -222,13 +222,13 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 	}
 
 	var afterCompletedAt float64
-	if latest, err := c.agentClient.GetLatestAssistantMessage(ctx, resolvedSessionID); err == nil && latest != nil {
+	if latest, err := c.agent.GetLatestAssistantMessage(ctx, resolvedSessionID); err == nil && latest != nil {
 		afterCompletedAt = latest.CompletedAt
 	}
 
 	var resolvedModelRef types.ModelRef
 	if resolvedModelSpec != "" {
-		ref, err := c.agentClient.ResolveModel(ctx, resolvedModelSpec, resolvedDirectory)
+		ref, err := c.agent.ResolveModel(ctx, resolvedModelSpec, resolvedDirectory)
 		if err != nil {
 			return NewError(http.StatusBadRequest, err.Error())
 		}
@@ -265,7 +265,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 		}
 	}
 
-	handle, err := c.agentClient.Prompt(ctx, resolvedSessionID, content, optfs...)
+	handle, err := c.agent.Prompt(ctx, resolvedSessionID, content, optfs...)
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
 	}
@@ -289,7 +289,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			if err := c.forwardPendingInteractions(ctx, req, resolvedSessionID, deliveredInteractions, reply); err != nil {
 				return err
 			}
-			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
+			results, err := c.agent.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}
@@ -309,7 +309,7 @@ func (c *AgentBridge) handlePrompt(ctx context.Context, req *Message, content st
 			if err := c.forwardPendingInteractions(ctx, req, resolvedSessionID, deliveredInteractions, reply); err != nil {
 				return err
 			}
-			results, err := c.agentClient.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
+			results, err := c.agent.PollMessagesAfter(ctx, resolvedSessionID, afterCompletedAt, c.messageOutputOptions)
 			if err != nil {
 				return NewError(http.StatusBadGateway, err.Error())
 			}
@@ -333,7 +333,7 @@ func advanceCompletedCursor(current float64, msg *types.Message) float64 {
 }
 
 func (c *AgentBridge) forwardPendingInteractions(ctx context.Context, req *Message, sessionID string, delivered map[string]struct{}, reply ReplyFunc) error {
-	permissions, err := c.agentClient.ListPendingPermissions(ctx, sessionID)
+	permissions, err := c.agent.ListPendingPermissions(ctx, sessionID)
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
 	}
@@ -348,7 +348,7 @@ func (c *AgentBridge) forwardPendingInteractions(ctx context.Context, req *Messa
 		}
 	}
 
-	questions, err := c.agentClient.ListPendingQuestions(ctx, sessionID)
+	questions, err := c.agent.ListPendingQuestions(ctx, sessionID)
 	if err != nil {
 		return NewError(http.StatusBadGateway, err.Error())
 	}
@@ -405,7 +405,7 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 	agentName := strings.TrimSpace(invocation.Flags["agent"])
 	title := strings.TrimSpace(invocation.Flags["title"])
 
-	createdSession, err := c.agentClient.CreateSession(ctx, types.CreateSessionRequest{Title: title, Directory: directory})
+	createdSession, err := c.agent.CreateSession(ctx, types.CreateSessionRequest{Title: title, Directory: directory})
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -460,7 +460,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		if targetSessionID == "" {
 			return nil, NewError(http.StatusBadRequest, "agent session id is required")
 		}
-		session, err := c.agentClient.GetSession(ctx, targetSessionID)
+		session, err := c.agent.GetSession(ctx, targetSessionID)
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", targetSessionID))
 		}
@@ -477,7 +477,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			c.conversationStore.SetDefaultDirectory(resolvedChatSessionID, resolvedDirectory)
 		}
 
-		msg, err := c.agentClient.GetLatestAssistantMessage(ctx, targetSessionID)
+		msg, err := c.agent.GetLatestAssistantMessage(ctx, targetSessionID)
 		if err == nil && msg != nil {
 			c.logger.Debug("session latest assistant message",
 				slog.String("session_id", targetSessionID),
@@ -492,7 +492,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		}
 
 		state, _ := c.conversationStore.Get(resolvedChatSessionID)
-		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agentClient, resolvedDirectory)
+		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agent, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
@@ -528,7 +528,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		lastModel := state.LastModel
 
 		if resolvedSessionID != "" {
-			session, err := c.agentClient.GetSession(ctx, resolvedSessionID)
+			session, err := c.agent.GetSession(ctx, resolvedSessionID)
 			if err != nil {
 				return nil, NewError(http.StatusBadGateway, fmt.Sprintf("session not found: %s", resolvedSessionID))
 			}
@@ -538,7 +538,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 			}
 
 			if lastModel.IsZero() {
-				messages, err := c.agentClient.GetMessages(ctx, resolvedSessionID)
+				messages, err := c.agent.GetMessages(ctx, resolvedSessionID)
 				if err == nil && len(messages) > 0 {
 					for i := len(messages) - 1; i >= 0; i-- {
 						if messages[i].Role == "assistant" {
@@ -553,7 +553,7 @@ func (c *AgentBridge) handleSessionCommand(ctx context.Context, req *Message, in
 		currentState := state
 		currentState.DefaultDirectory = resolvedDirectory
 
-		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agentClient, resolvedDirectory)
+		modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agent, resolvedDirectory)
 		if modelInfo == "" {
 			modelInfo = strings.TrimSpace(state.DefaultModel)
 		}
@@ -703,7 +703,7 @@ func (c *AgentBridge) handlePermissionCommand(ctx context.Context, req *Message,
 		return nil, err
 	}
 
-	requests, err := c.agentClient.ListPendingPermissions(ctx, sessionID)
+	requests, err := c.agent.ListPendingPermissions(ctx, sessionID)
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -717,7 +717,7 @@ func (c *AgentBridge) handlePermissionCommand(ctx context.Context, req *Message,
 		return &Message{Content: message, Chat: req.Chat}, nil
 	}
 
-	if err := c.agentClient.ReplyPermission(ctx, sessionID, target.ID, reply); err != nil {
+	if err := c.agent.ReplyPermission(ctx, sessionID, target.ID, reply); err != nil {
 		if errors.Is(err, types.ErrInteractionNoLongerPending) {
 			return &Message{Content: fmt.Sprintf("Permission request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 		}
@@ -747,7 +747,7 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		sessionID = ""
 	}
 
-	requests, err := c.agentClient.ListPendingQuestions(ctx, sessionID)
+	requests, err := c.agent.ListPendingQuestions(ctx, sessionID)
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
@@ -765,7 +765,7 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 		if err != nil {
 			return nil, NewError(http.StatusBadGateway, err.Error())
 		}
-		if err := c.agentClient.RejectQuestion(ctx, targetSessionID, target.ID); err != nil {
+		if err := c.agent.RejectQuestion(ctx, targetSessionID, target.ID); err != nil {
 			if errors.Is(err, types.ErrInteractionNoLongerPending) {
 				return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 			}
@@ -808,7 +808,7 @@ func (c *AgentBridge) handleQuestionCommand(ctx context.Context, req *Message, i
 	if err != nil {
 		return nil, NewError(http.StatusBadGateway, err.Error())
 	}
-	if err := c.agentClient.ReplyQuestion(ctx, targetSessionID, target.ID, answers); err != nil {
+	if err := c.agent.ReplyQuestion(ctx, targetSessionID, target.ID, answers); err != nil {
 		if errors.Is(err, types.ErrInteractionNoLongerPending) {
 			return &Message{Content: fmt.Sprintf("Question request no longer pending: %s", target.ID), Chat: req.Chat}, nil
 		}
@@ -1091,7 +1091,7 @@ func formatQuestionRequest(index int, request types.QuestionRequest) string {
 }
 
 func (c *AgentBridge) listSessions(ctx context.Context, directory string, activeOnly ...bool) (string, error) {
-	sessions, err := c.agentClient.ListSessions(ctx, strings.TrimSpace(directory))
+	sessions, err := c.agent.ListSessions(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
@@ -1151,7 +1151,7 @@ func (c *AgentBridge) listSessions(ctx context.Context, directory string, active
 }
 
 func (c *AgentBridge) listAllSessions(ctx context.Context, activeOnly ...bool) (string, error) {
-	sessions, err := c.agentClient.ListAllSessions(ctx)
+	sessions, err := c.agent.ListAllSessions(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1222,7 +1222,7 @@ func filterSessionsByActivity(sessions []types.Session) []types.Session {
 }
 
 func (c *AgentBridge) listModels(ctx context.Context, directory string) (string, error) {
-	models, err := c.agentClient.ListModels(ctx, strings.TrimSpace(directory))
+	models, err := c.agent.ListModels(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
@@ -1246,7 +1246,7 @@ func (c *AgentBridge) listModels(ctx context.Context, directory string) (string,
 }
 
 func (c *AgentBridge) listAgents(ctx context.Context, directory string) (string, error) {
-	agents, err := c.agentClient.ListAgents(ctx, strings.TrimSpace(directory))
+	agents, err := c.agent.ListAgents(ctx, strings.TrimSpace(directory))
 	if err != nil {
 		return "", err
 	}
