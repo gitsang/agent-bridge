@@ -6,7 +6,7 @@ import (
 	"github.com/gitsang/agent-bridge/internal/types"
 )
 
-type AgentClient interface {
+type Agent interface {
 	ListModels(ctx context.Context, directory string) ([]types.ModelInfo, error)
 	ResolveModel(ctx context.Context, spec, directory string) (types.ModelRef, error)
 

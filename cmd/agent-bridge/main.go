@@ -15,7 +15,7 @@ import (
 	_ "github.com/gitsang/agent-bridge/internal/agent/codex"
 	_ "github.com/gitsang/agent-bridge/internal/agent/opencode"
 	"github.com/gitsang/agent-bridge/internal/bridge"
-	"github.com/gitsang/agent-bridge/internal/conversation_store"
+	"github.com/gitsang/agent-bridge/internal/conversation"
 	"github.com/gitsang/agent-bridge/internal/platform"
 	_ "github.com/gitsang/agent-bridge/internal/platform/mattermost"
 	_ "github.com/gitsang/agent-bridge/internal/platform/openai_compatible"
@@ -168,15 +168,15 @@ func Run(cmd *cobra.Command, _ []string) error {
 	return group.Wait()
 }
 
-func buildConversationStore(c Config) (conversation_store.ConversationStore, error) {
+func buildConversationStore(c Config) (conversation.ConversationStore, error) {
 	storeType := strings.ToLower(strings.TrimSpace(c.Conversation.Store.Type))
 	switch storeType {
 	case "", "memory":
-		return conversation_store.NewMemoryConversationStore(c.Conversation.Store.TTL, c.Conversation.Store.MaxItems), nil
+		return conversation.NewMemoryConversationStore(c.Conversation.Store.TTL, c.Conversation.Store.MaxItems), nil
 	case "file":
-		return conversation_store.NewFileConversationStore(c.Conversation.Store.Path, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
+		return conversation.NewFileConversationStore(c.Conversation.Store.Path, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
 	case "sqlite":
-		return conversation_store.NewSQLiteConversationStore(c.Conversation.Store.Path, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
+		return conversation.NewSQLiteConversationStore(c.Conversation.Store.Path, c.Conversation.Store.TTL, c.Conversation.Store.MaxItems)
 	default:
 		return nil, fmt.Errorf("unsupported conversation store type %q", c.Conversation.Store.Type)
 	}
@@ -201,11 +201,11 @@ func buildAgentClient(c Config, logger *slog.Logger) (agent.Client, error) {
 	switch driver {
 	case "opencode":
 		configRaw = map[string]any{
-			"base_url":  c.Agent.Opencode.BaseURL,
-			"username":  c.Agent.Opencode.Username,
-			"password":  c.Agent.Opencode.Password,
-			"timeout":   c.Agent.Opencode.Timeout.String(),
-			"db_path":   c.Agent.Opencode.DBPath,
+			"base_url": c.Agent.Opencode.BaseURL,
+			"username": c.Agent.Opencode.Username,
+			"password": c.Agent.Opencode.Password,
+			"timeout":  c.Agent.Opencode.Timeout.String(),
+			"db_path":  c.Agent.Opencode.DBPath,
 		}
 	case "codex":
 		configRaw = map[string]any{

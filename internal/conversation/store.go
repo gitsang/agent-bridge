@@ -1,4 +1,4 @@
-package conversation_store
+package conversation
 
 import (
 	"time"

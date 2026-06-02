@@ -1,4 +1,4 @@
-package conversation_store
+package conversation
 
 import (
 	"database/sql"
@@ -290,7 +290,7 @@ func (s *SQLiteConversationStore) cleanupExpired(now time.Time) {
 	_, _ = s.db.Exec(`DELETE FROM conversations WHERE last_seen_at < ?`, cutoff)
 }
 
-func (s *SQLiteConversationStore) limitSize(now time.Time) {
+func (s *SQLiteConversationStore) limitSize(_ time.Time) {
 	var count int
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM conversations`).Scan(&count)
 	if count < s.maxItems {
