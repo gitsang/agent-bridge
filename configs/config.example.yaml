@@ -21,7 +21,7 @@ platforms:
   mattermost:
     mattermost:
       mode: "websocket" # webhook | websocket
-      command_prefix: "!" # command prefix, default "/"
+      command_prefix: ":" # command prefix, default "/"
       webhook:
         listen: ":24370"
         token: "mattermost-token"
