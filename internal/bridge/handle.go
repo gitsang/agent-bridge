@@ -400,9 +400,12 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 }
 
 func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invocation *Invocation) (*Message, error) {
-	directory := strings.TrimSpace(invocation.Flags["directory"])
-	model := strings.TrimSpace(invocation.Flags["model"])
-	agentName := strings.TrimSpace(invocation.Flags["agent"])
+	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
+	state, _ := c.conversationStore.Get(resolvedChatSessionID)
+
+	directory := firstNonEmpty(strings.TrimSpace(invocation.Flags["directory"]), strings.TrimSpace(state.DefaultDirectory))
+	model := firstNonEmpty(strings.TrimSpace(invocation.Flags["model"]), strings.TrimSpace(state.DefaultModel))
+	agentName := firstNonEmpty(strings.TrimSpace(invocation.Flags["agent"]), strings.TrimSpace(state.DefaultAgent))
 	title := strings.TrimSpace(invocation.Flags["title"])
 
 	createdSession, err := c.agent.CreateSession(ctx, types.CreateSessionRequest{Title: title, Directory: directory})
@@ -413,7 +416,6 @@ func (c *AgentBridge) handleNewCommand(ctx context.Context, req *Message, invoca
 		return nil, NewError(http.StatusBadGateway, "created session id is required")
 	}
 
-	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
 	if resolvedChatSessionID != "" {
 		c.conversationStore.PutBinding(resolvedChatSessionID, strings.TrimSpace(createdSession.ID))
 		if model != "" {
