@@ -392,6 +392,8 @@ func (c *AgentBridge) handleCommand(ctx context.Context, req *Message, invocatio
 		return c.handlePermissionCommand(ctx, req, invocation)
 	case "question":
 		return c.handleQuestionCommand(ctx, req, invocation)
+	case "status":
+		return c.handleStatusCommand(ctx, req)
 	case "help":
 		return &Message{Content: c.helpText(invocation), Chat: req.Chat}, nil
 	default:
@@ -660,6 +662,116 @@ func (c *AgentBridge) handleAgentCommand(ctx context.Context, req *Message, invo
 	default:
 		return nil, NewError(http.StatusBadRequest, fmt.Sprintf("unsupported agent command: %s", subcommand))
 	}
+}
+
+func (c *AgentBridge) handleStatusCommand(ctx context.Context, req *Message) (*Message, error) {
+	resolvedChatSessionID := strings.TrimSpace(req.Chat.SessionID)
+	state, _ := c.conversationStore.Get(resolvedChatSessionID)
+
+	resolvedSessionID := strings.TrimSpace(state.AgentSessionID)
+	resolvedDirectory := strings.TrimSpace(state.DefaultDirectory)
+	resolvedTitle := ""
+
+	lastModel := state.LastModel
+
+	var messageCount int
+	var pendingPermissions int
+	var pendingQuestions int
+
+	if resolvedSessionID != "" {
+		session, err := c.agent.GetSession(ctx, resolvedSessionID)
+		if err == nil && session != nil {
+			resolvedTitle = strings.TrimSpace(session.Title)
+			resolvedDirectory = firstNonEmpty(strings.TrimSpace(session.Directory), resolvedDirectory)
+		}
+
+		if lastModel.IsZero() {
+			messages, err := c.agent.GetMessages(ctx, resolvedSessionID)
+			if err == nil {
+				messageCount = len(messages)
+				for i := len(messages) - 1; i >= 0; i-- {
+					if messages[i].Role == "assistant" {
+						lastModel = messages[i].Model
+						break
+					}
+				}
+			}
+		} else {
+			messages, err := c.agent.GetMessages(ctx, resolvedSessionID)
+			if err == nil {
+				messageCount = len(messages)
+			}
+		}
+
+		permissions, err := c.agent.ListPendingPermissions(ctx, resolvedSessionID)
+		if err == nil {
+			pendingPermissions = len(permissions)
+		}
+
+		questions, err := c.agent.ListPendingQuestions(ctx, resolvedSessionID)
+		if err == nil {
+			pendingQuestions = len(questions)
+		}
+	}
+
+	modelInfo := c.modelCache.Humanize(ctx, lastModel, c.agent, resolvedDirectory)
+	if modelInfo == "" {
+		modelInfo = strings.TrimSpace(state.DefaultModel)
+	}
+	if modelInfo == "" {
+		modelInfo = "(not set)"
+	}
+
+	agentInfo := strings.TrimSpace(state.DefaultAgent)
+	if agentInfo == "" {
+		agentInfo = "(not set)"
+	}
+
+	directoryInfo := resolvedDirectory
+	if directoryInfo == "" {
+		directoryInfo = "(not set)"
+	}
+
+	builder := strings.Builder{}
+	builder.WriteString("Status:")
+
+	if resolvedSessionID != "" {
+		builder.WriteString("\n- Session: ")
+		builder.WriteString(resolvedSessionID)
+		if resolvedTitle != "" {
+			builder.WriteString(" (")
+			builder.WriteString(resolvedTitle)
+			builder.WriteString(")")
+		}
+	} else {
+		builder.WriteString("\n- Session: (not bound)")
+	}
+
+	builder.WriteString("\n- Model: ")
+	builder.WriteString(modelInfo)
+
+	builder.WriteString("\n- Agent: ")
+	builder.WriteString(agentInfo)
+
+	builder.WriteString("\n- Directory: ")
+	builder.WriteString(directoryInfo)
+
+	if resolvedSessionID != "" {
+		fmt.Fprintf(&builder, "\n- Messages: %d", messageCount)
+		fmt.Fprintf(&builder, "\n- Pending permissions: %d", pendingPermissions)
+		fmt.Fprintf(&builder, "\n- Pending questions: %d", pendingQuestions)
+	}
+
+	return &Message{
+		Content: builder.String(),
+		Chat:    req.Chat,
+		Agent: AgentContext{
+			SessionID: resolvedSessionID,
+			Title:     resolvedTitle,
+			Model:     modelInfo,
+			Directory: resolvedDirectory,
+		},
+	}, nil
 }
 
 func (c *AgentBridge) handleDirectoryCommand(req *Message, invocation *Invocation) (*Message, error) {
@@ -1293,6 +1405,8 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 			return "Usage: /permission <once|always|reject> [id|index]"
 		case "question":
 			return "Usage: /question [id|index] <answer...>\n       /question reject [id|index]"
+		case "status":
+			return "Usage: /status  — Show current session status (session, model, agent, directory, message count, pending interactions)"
 		}
 	}
 
@@ -1311,6 +1425,7 @@ func (c *AgentBridge) helpText(invocation *Invocation) string {
 		"- /permission <once|always|reject> [id|index]",
 		"- /question [id|index] <answer...>",
 		"- /question reject [id|index]",
-		"- /help [new|session|model|agent|directory|permission|question]",
+		"- /status",
+		"- /help [new|session|model|agent|directory|permission|question|status]",
 	}, "\n")
 }
