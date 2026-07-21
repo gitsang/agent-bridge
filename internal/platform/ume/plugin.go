@@ -515,7 +515,7 @@ func formatReply(message *bridge.Message) string {
 }
 
 func formatCardReply(message *bridge.Message) (string, error) {
-	title := strings.TrimSpace(message.Agent.Title)
+	// title := strings.TrimSpace(message.Agent.Title)
 	content := html.EscapeString(strings.TrimSpace(message.Content))
 	directory := strings.TrimSpace(message.Agent.Directory)
 	sessionID := strings.TrimSpace(message.Agent.SessionID)
@@ -525,7 +525,7 @@ func formatCardReply(message *bridge.Message) (string, error) {
 		Header: umeCardHeader{
 			Title: umeCardText{
 				Tag:     "plainText",
-				Content: title,
+				Content: "Assistant",
 			},
 			Theme: "main",
 		},
