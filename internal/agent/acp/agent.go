@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -422,6 +424,29 @@ func (c *Agent) localSessions(directory string) []types.Session {
 	return sessions
 }
 
+// resolveDirectory returns an absolute working directory for a new session.
+func (c *Agent) resolveDirectory(requested string) (string, error) {
+	for _, candidate := range []string{strings.TrimSpace(requested), c.directory} {
+		if candidate == "" {
+			continue
+		}
+		if filepath.IsAbs(candidate) {
+			return filepath.Clean(candidate), nil
+		}
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			return "", fmt.Errorf("resolve acp directory %q: %w", candidate, err)
+		}
+		return absolute, nil
+	}
+
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve acp working directory: %w", err)
+	}
+	return workingDirectory, nil
+}
+
 func (c *Agent) GetSession(_ context.Context, sessionID string) (*types.Session, error) {
 	resolvedSessionID := strings.TrimSpace(sessionID)
 	if resolvedSessionID == "" {
@@ -441,9 +466,11 @@ func (c *Agent) CreateSession(ctx context.Context, request types.CreateSessionRe
 	if err != nil {
 		return nil, err
 	}
-	directory := firstNonEmpty(strings.TrimSpace(request.Directory), c.directory)
-	if directory == "" {
-		directory = "."
+	// ACP requires an absolute cwd, so fall back to the process working
+	// directory rather than a relative path.
+	directory, err := c.resolveDirectory(request.Directory)
+	if err != nil {
+		return nil, err
 	}
 
 	var resp newSessionResponse

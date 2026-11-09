@@ -40,7 +40,7 @@ type Config struct {
 		} `mapstructure:"opencode2"`
 		Pi struct {
 			Command    string            `default:"pi" usage:"pi command" mapstructure:"command"`
-			Args       []string          `default:"[--mode,rpc]" usage:"pi rpc command args" mapstructure:"args"`
+			Args       []string          `default:"" usage:"pi rpc command args, default --mode rpc" mapstructure:"args"`
 			Env        map[string]string `usage:"pi extra environment" mapstructure:"env"`
 			Directory  string            `usage:"pi working directory" mapstructure:"directory"`
 			SessionDir string            `usage:"pi session directory" mapstructure:"session_dir"`

@@ -172,7 +172,7 @@ platforms:
 
 # AI agent configuration
 agent:
-  driver: claude # Supported: opencode, codex, claude
+  driver: claude # Supported: opencode, opencode2, codex, claude, pi, acp
   claude:
     command: "claude"
     args:
@@ -308,7 +308,7 @@ agent:
 
 #### 4.2.3 OpenCode
 
-Uses OpenCode as the AI agent (default driver).
+Uses OpenCode 1.x as the AI agent (default driver).
 
 ```yaml
 agent:
@@ -318,6 +318,95 @@ agent:
     timeout: 10m
     db_path: "/root/.local/share/opencode/opencode.db"
 ```
+
+#### 4.2.4 OpenCode 2.x
+
+OpenCode 2 replaced the 1.x HTTP API with a new one under `/api`, so it has its
+own driver. The server prints a password on startup unless you set one:
+
+```bash
+OPENCODE_SERVER_PASSWORD=changeit opencode serve --port 4096
+```
+
+```yaml
+agent:
+  driver: opencode2
+  opencode2:
+    base_url: "http://127.0.0.1:4096"
+    username: "opencode" # OpenCode 2 requires this exact username
+    password: "changeit"
+    timeout: 30m
+    poll_interval: 1s
+```
+
+**Notes**:
+
+- Models, agents, permissions, and questions all map to the 2.x HttpApi
+- A prompt is accepted immediately and the driver then waits for the session
+  to become idle and for the log to advance past the prompt
+- Session routes are scoped to a working directory, which the driver learns
+  from the session payload and reuses
+- `/session list --global` only covers directories the bridge has seen, because
+  the API has no cross-project session list
+
+#### 4.2.5 pi
+
+Drives the pi coding agent through its RPC mode.
+
+```yaml
+agent:
+  driver: pi
+  pi:
+    command: "pi"
+    args: ["--mode", "rpc"]
+    env: {}
+    timeout: 30m
+```
+
+**Notes**:
+
+- Model and provider selection uses pi's own model catalog
+- Extension dialogs (select, confirm, input, editor) are surfaced as
+  `/question`; pi has no per-tool permission prompt, so `/permission` reports
+  nothing
+- Cancelling a prompt sends `abort` to pi
+
+#### 4.2.6 Any ACP agent
+
+`agent.driver: acp` speaks the [Agent Client Protocol](https://agentclientprotocol.com)
+over a child process, so any ACP agent works without a dedicated driver.
+DeepSeek Harness (dsh) is one such agent:
+
+```yaml
+agent:
+  driver: acp
+  acp:
+    command: "dsh"
+    args: ["--profile", "acp"]
+    timeout: 30m
+    initialize_timeout: 30s
+```
+
+OpenCode 2 and other ACP agents work the same way by changing `command` and
+`args`:
+
+```yaml
+agent:
+  driver: acp
+  acp:
+    command: "opencode"
+    args: ["acp"]
+```
+
+**Notes**:
+
+- Models come from the session configuration options the agent advertises, so
+  the driver opens one throwaway session per directory to list them
+- `/permission` maps onto ACP permission requests, and `once`/`always`/`reject`
+  choose the matching option the agent offered
+- `/question` is not available over ACP; agents surface their prompts as
+  permission requests instead
+- Sessions are listed through `session/list` when the agent supports it
 
 ### 4.3 Message Output Configuration
 
@@ -427,10 +516,12 @@ Agent Bridge supports the following slash commands:
 
 ### 6.2 AI Agent Support
 
-- [x] OpenCode (default)
+- [x] OpenCode 1.x (default)
+- [x] OpenCode 2.x
 - [x] Claude Code
 - [x] Codex
-- [ ] Other ACP-compatible agents (planned)
+- [x] pi
+- [x] Any ACP agent (including DeepSeek Harness)
 
 ### 6.3 Other Features
 

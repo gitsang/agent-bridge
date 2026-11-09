@@ -31,9 +31,20 @@ type fakeServer struct {
 	authUser  string
 	authPass  string
 	interrupt int
-	replies   []map[string]string
-	formReply []map[string]any
-	lastQuery map[string]string
+	// failNext makes the next settled turn report this provider error.
+	failNext string
+	// delayAssistant delays the assistant entry by this many session polls, so
+	// tests can prove a turn does not settle on the user message alone.
+	delayAssistant int
+	delayed        int
+	// assistantPending marks that the accepted prompt still owes an assistant
+	// entry.
+	assistantPending bool
+	replies          []map[string]string
+	formReply        []map[string]any
+	lastQuery        map[string]string
+	// createdAt is a monotonic millisecond clock for appended log entries.
+	createdAt int64
 }
 
 func newFakeServer() *fakeServer {
@@ -43,6 +54,7 @@ func newFakeServer() *fakeServer {
 		forms:      map[string][]formInfo{},
 		pending:    map[string]int{},
 		lastQuery:  map[string]string{},
+		createdAt:  1000,
 	}
 }
 
@@ -111,19 +123,7 @@ func (f *fakeServer) handler() http.Handler {
 			} else {
 				session.Time.Busy = 1000
 				session.Time.Idle = 2000
-				if f.prompted > 0 {
-					f.messages[sessionID] = append(f.messages[sessionID], messageInfo{
-						ID:    "msg_assistant",
-						Type:  "assistant",
-						Time:  messageTime{Created: 3000, Completed: 3000},
-						Model: &modelRef{ID: "m1", ProviderID: "prov"},
-						Content: []messagePart{{
-							Type: "text",
-							Text: "pong",
-						}},
-					})
-					f.prompted = 0
-				}
+				f.maybeAppendAssistantLocked(sessionID)
 			}
 			snapshot := *session
 			f.mu.Unlock()
@@ -139,12 +139,15 @@ func (f *fakeServer) handler() http.Handler {
 			f.mu.Lock()
 			f.pending[sessionID] = f.turns
 			f.prompted++
+			f.assistantPending = true
+			f.delayed = f.delayAssistant
 			f.messages[sessionID] = append(f.messages[sessionID], messageInfo{
 				ID:   "msg_user",
 				Type: "user",
-				Time: messageTime{Created: 2000},
+				Time: messageTime{Created: f.createdAt},
 				Text: body.Text,
 			})
+			f.createdAt += 1000
 			f.mu.Unlock()
 			writeEnvelope(w, map[string]any{"id": "msg_user"})
 		case rest == "interrupt" && r.Method == http.MethodPost:
@@ -234,6 +237,44 @@ func (f *fakeServer) recordQuery(r *http.Request) {
 	for key := range r.URL.Query() {
 		f.lastQuery[key] = r.URL.Query().Get(key)
 	}
+}
+
+// maybeAppendAssistantLocked appends the assistant entry for the accepted
+// prompt once the configured delay has elapsed.
+func (f *fakeServer) maybeAppendAssistantLocked(sessionID string) {
+	if f.prompted == 0 {
+		return
+	}
+	if f.delayed > 0 {
+		f.delayed--
+		return
+	}
+	if !f.assistantPending {
+		return
+	}
+	f.assistantPending = false
+	assistant := messageInfo{
+		ID:      "msg_assistant",
+		Type:    "assistant",
+		Time:    messageTime{Created: f.createdAt, Completed: f.createdAt},
+		Model:   &modelRef{ID: "m1", ProviderID: "prov"},
+		Content: []messagePart{{Type: "text", Text: "pong"}},
+	}
+	f.createdAt += 1000
+	if f.failNext != "" {
+		assistant.Content = nil
+		assistant.Finish = "error"
+		assistant.Error = &structuredError{Type: "provider", Message: f.failNext}
+		f.failNext = ""
+	}
+	f.messages[sessionID] = append(f.messages[sessionID], assistant)
+	f.messages[sessionID] = append(f.messages[sessionID], messageInfo{
+		ID:   "msg_idle",
+		Type: "idle",
+		Time: messageTime{Created: f.createdAt},
+	})
+	f.createdAt += 1000
+	f.prompted = 0
 }
 
 func (f *fakeServer) findSessionLocked(sessionID string) *sessionInfo {
@@ -582,5 +623,66 @@ func TestBasicAuthIsRequiredWhenConfigured(t *testing.T) {
 	authorized := NewClient(httpServer.URL, WithAuthentication("opencode", "secret"), WithTimeout(5*time.Second))
 	if _, err := authorized.ListModels(context.Background(), ""); err != nil {
 		t.Fatalf("ListModels() with credentials error = %v", err)
+	}
+}
+
+func TestPromptReportsProviderFailure(t *testing.T) {
+	server := newFakeServer()
+	server.turns = 1
+	server.failNext = "provider free limit reached"
+	client := startFake(t, server)
+
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	handle, err := client.Prompt(context.Background(), session.ID, "hi")
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	select {
+	case err := <-handle.Err():
+		if err == nil || !strings.Contains(err.Error(), "provider free limit reached") {
+			t.Fatalf("error = %v, want the provider message", err)
+		}
+	case <-handle.Done():
+		// A failed turn must not also report success.
+		t.Fatal("failed turn closed Done")
+	case <-time.After(3 * time.Second):
+		t.Fatal("Prompt() did not settle")
+	}
+}
+
+func TestTurnWaitsForAssistantOutcome(t *testing.T) {
+	server := newFakeServer()
+	// The session goes idle immediately after the user message lands, but the
+	// assistant entry arrives one poll later. The turn must not settle on the
+	// user message alone.
+	server.turns = 0
+	server.delayAssistant = 1
+	client := startFake(t, server)
+
+	session, err := client.CreateSession(context.Background(), types.CreateSessionRequest{Directory: "/tmp/project"})
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	handle, err := client.Prompt(context.Background(), session.ID, "hi")
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	select {
+	case <-handle.Done():
+	case err := <-handle.Err():
+		t.Fatalf("Prompt() failed: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("Prompt() did not settle")
+	}
+
+	messages, err := client.PollMessagesAfter(context.Background(), session.ID, 0, types.MessageOutputOptions{})
+	if err != nil {
+		t.Fatalf("PollMessagesAfter() error = %v", err)
+	}
+	if len(messages) != 1 || messages[0].Content != "pong" {
+		t.Fatalf("messages = %+v, want one pong reply", messages)
 	}
 }

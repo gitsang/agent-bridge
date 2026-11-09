@@ -574,3 +574,60 @@ func TestConfirmAnswerParsing(t *testing.T) {
 }
 
 var _ = io.Discard
+
+func TestSplitArgsNormalisesTemplateRenderings(t *testing.T) {
+	cases := map[string][]string{
+		"--mode rpc":             {"--mode", "rpc"},
+		`["--mode", "rpc"]`:      {"--mode", "rpc"},
+		`["--mode" "rpc"]`:       {"--mode", "rpc"},
+		"[--mode rpc]":           {"--mode", "rpc"},
+		"['--mode', 'rpc',]":     {"--mode", "rpc"},
+		"--mode=rpc":             {"--mode=rpc"},
+		"  --mode   rpc  ":       {"--mode", "rpc"},
+		"--append-system-prompt": {"--append-system-prompt"},
+	}
+	for input, want := range cases {
+		got := splitArgs([]string{input})
+		if len(got) != len(want) {
+			t.Fatalf("splitArgs(%q) = %v, want %v", input, got, want)
+		}
+		for index := range want {
+			if got[index] != want[index] {
+				t.Fatalf("splitArgs(%q) = %v, want %v", input, got, want)
+			}
+		}
+	}
+	if got := splitArgs(nil); len(got) != 0 {
+		t.Fatalf("splitArgs(nil) = %v, want empty", got)
+	}
+}
+
+func TestSplitArgsKeepsSeparateEntries(t *testing.T) {
+	got := splitArgs([]string{"--mode", "rpc"})
+	if len(got) != 2 || got[0] != "--mode" || got[1] != "rpc" {
+		t.Fatalf("splitArgs() = %v, want [--mode rpc]", got)
+	}
+}
+
+func TestEnsureRPCMode(t *testing.T) {
+	cases := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{"already rpc", []string{"--mode", "rpc"}, []string{"--mode", "rpc"}},
+		{"empty", nil, []string{"--mode", "rpc"}},
+		{"extra flags kept", []string{"--no-session"}, []string{"--mode", "rpc", "--no-session"}},
+		// A configured text mode must not win: the bridge cannot read prose.
+		{"wrong mode replaced", []string{"--mode", "text", "--no-session"}, []string{"--mode", "rpc", "--no-session"}},
+		{"equals form replaced", []string{"--mode=json"}, []string{"--mode", "rpc"}},
+		{"duplicate mode collapsed", []string{"--mode", "text", "--mode", "rpc"}, []string{"--mode", "rpc"}},
+		{"dangling mode dropped", []string{"--mode"}, []string{"--mode", "rpc"}},
+	}
+	for _, testCase := range cases {
+		got := ensureRPCMode(splitArgs(testCase.input))
+		if strings.Join(got, " ") != strings.Join(testCase.want, " ") {
+			t.Fatalf("%s: ensureRPCMode(%v) = %v, want %v", testCase.name, testCase.input, got, testCase.want)
+		}
+	}
+}

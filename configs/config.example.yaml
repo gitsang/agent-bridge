@@ -33,7 +33,7 @@ platforms:
         access_token: "changeit"
 
 # Agent driver configuration
-# Supported drivers: opencode, codex, claude
+# Supported drivers: opencode, opencode2, codex, claude, pi, acp
 # Switch by changing the driver field below
 agent:
   driver: opencode
@@ -59,6 +59,27 @@ agent:
     env: {}
     timeout: 30m
     initialize_timeout: 15s
+  opencode2:
+    base_url: "http://127.0.0.1:4096"
+    username: "opencode" # opencode 2 requires this exact username
+    password: ""
+    timeout: 30m
+    poll_interval: 1s
+  pi:
+    command: "pi"
+    args:
+      - "--mode"
+      - "rpc"
+    env: {}
+    timeout: 30m
+  acp:
+    command: "dsh"
+    args:
+      - "--profile"
+      - "acp"
+    env: {}
+    timeout: 30m
+    initialize_timeout: 30s
   claude:
     command: "claude"
     args:

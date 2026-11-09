@@ -49,29 +49,12 @@ type turnRegistry struct {
 
 type turnState struct {
 	sessionID string
-	// baseline is the newest message creation time seen before the prompt was
-	// submitted, in Unix milliseconds.
-	baseline  int64
-	cancel    context.CancelFunc
-	stop      chan struct{}
-	stopOnce  sync.Once
-	done      chan struct{}
-	doneOnce  sync.Once
-	err       error
-	errMu     sync.Mutex
-	interrupt bool
-}
-
-func (t *turnState) setErr(err error) {
-	t.errMu.Lock()
-	t.err = err
-	t.errMu.Unlock()
-}
-
-func (t *turnState) getErr() error {
-	t.errMu.Lock()
-	defer t.errMu.Unlock()
-	return t.err
+	// baseline is the creation time of the user message this prompt appended,
+	// in Unix milliseconds.
+	baseline int64
+	cancel   context.CancelFunc
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 func WithLogger(logger *slog.Logger) Option {
@@ -478,14 +461,15 @@ func (c *Agent) Prompt(ctx context.Context, sessionID string, prompt string, opt
 		}
 	}
 
-	// Baseline the message log so the turn only counts as settled once the
-	// agent actually wrote something for this prompt.
-	baseline := c.latestMessageMillis(ctx, resolvedSessionID)
-
+	// The user message this prompt appends marks where the turn starts. Waiting
+	// for anything newer keeps an already-queued follow-up from settling the
+	// turn before the agent answers.
+	var accepted envelope[messageInfo]
 	if err := c.client.post(ctx, "/api/session/"+url.PathEscape(resolvedSessionID)+"/prompt", nil,
-		promptBody{Text: content}, nil); err != nil {
+		promptBody{Text: content}, &accepted); err != nil {
 		return nil, err
 	}
+	baseline := accepted.Data.Time.Created
 
 	promptCtx := ctx
 	var cancel context.CancelFunc
@@ -500,34 +484,26 @@ func (c *Agent) Prompt(ctx context.Context, sessionID string, prompt string, opt
 		baseline:  baseline,
 		cancel:    cancel,
 		stop:      make(chan struct{}),
-		done:      make(chan struct{}),
 	}
 	c.turns.add(resolvedSessionID, turn)
+
+	doneCh := make(chan struct{})
+	errCh := make(chan error, 1)
 
 	go func() {
 		defer cancel()
 		err := c.awaitTurn(promptCtx, resolvedSessionID, turn)
-		turn.setErr(err)
 		c.turns.remove(resolvedSessionID, turn)
-		turn.doneOnce.Do(func() { close(turn.done) })
-	}()
-
-	return types.NewPromptHandle(turn.done, c.errChan(turn)), nil
-}
-
-// errChan exposes the turn error once it settles, without blocking delivery of
-// Done for a successful turn.
-func (c *Agent) errChan(turn *turnState) chan error {
-	errCh := make(chan error, 1)
-	go func() {
-		<-turn.done
-		if err := turn.getErr(); err != nil {
+		// A failed turn reports through Err only: closing Done as well would
+		// race the bridge into treating it as a successful empty reply.
+		if err != nil {
 			errCh <- err
 			return
 		}
-		close(errCh)
+		close(doneCh)
 	}()
-	return errCh
+
+	return types.NewPromptHandle(doneCh, errCh), nil
 }
 
 // awaitTurn waits until the session agent loop is idle, then reports any
@@ -562,36 +538,40 @@ func (c *Agent) awaitTurn(ctx context.Context, sessionID string, turn *turnState
 }
 
 // turnSettled reports whether this prompt's turn finished: the agent loop is
-// idle and the log advanced past the baseline.
+// idle and the log holds an assistant or idle entry that came after the prompt
+// was accepted. Requiring an outcome entry matters because the user message
+// alone appears before the agent has answered.
 func (c *Agent) turnSettled(ctx context.Context, sessionID string, baseline int64) (bool, error) {
-	var resp envelope[sessionInfo]
-	if err := c.client.get(ctx, "/api/session/"+url.PathEscape(sessionID), locationQuery(nil, c.logs.get(sessionID)), &resp); err != nil {
+	var session envelope[sessionInfo]
+	if err := c.client.get(ctx, "/api/session/"+url.PathEscape(sessionID), locationQuery(nil, c.logs.get(sessionID)), &session); err != nil {
 		return false, err
 	}
-	if resp.Data.Time.Busy > resp.Data.Time.Idle {
+	if session.Data.Time.Busy > session.Data.Time.Idle {
 		return false, nil
 	}
-	return c.latestMessageMillis(ctx, sessionID) > baseline, nil
-}
 
-// latestMessageMillis returns the creation time of the newest log entry.
-func (c *Agent) latestMessageMillis(ctx context.Context, sessionID string) int64 {
 	query := url.Values{}
 	query.Set("order", "desc")
-	query.Set("limit", "1")
-
-	var resp envelope[[]messageInfo]
-	if err := c.client.get(ctx, "/api/session/"+url.PathEscape(sessionID)+"/message", query, &resp); err != nil {
-		c.logger.Debug("opencode2 message baseline failed",
-			slog.String("session_id", sessionID),
-			slog.String("error", err.Error()),
-		)
-		return 0
+	query.Set("limit", "10")
+	var messages envelope[[]messageInfo]
+	if err := c.client.get(ctx, "/api/session/"+url.PathEscape(sessionID)+"/message", query, &messages); err != nil {
+		return false, err
 	}
-	if len(resp.Data) == 0 {
-		return 0
+	for _, item := range messages.Data {
+		if item.Time.Created <= baseline {
+			continue
+		}
+		switch item.Type {
+		case "assistant":
+			// A streamed assistant message settles once it reports completion.
+			if item.Time.Completed > 0 {
+				return true, nil
+			}
+		case "idle":
+			return true, nil
+		}
 	}
-	return resp.Data[0].Time.Created
+	return false, nil
 }
 
 // turnError reports a failed outcome recorded by the session or the newest

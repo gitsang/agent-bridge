@@ -3,6 +3,8 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -476,5 +478,37 @@ func TestPickPermissionOption(t *testing.T) {
 	}
 	if got := pickPermissionOption(map[string]string{"a": "reject_once"}, types.PermissionReplyOnce); got != "" {
 		t.Fatalf("missing option = %q, want empty", got)
+	}
+}
+
+func TestResolveDirectoryUsesAbsoluteCWD(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+
+	cases := []struct {
+		requested string
+		fallback  string
+		want      string
+	}{
+		{requested: "/tmp/project", fallback: "", want: "/tmp/project"},
+		{requested: "/tmp/project/", fallback: "", want: "/tmp/project"},
+		{requested: "relative", fallback: "", want: filepath.Join(workingDirectory, "relative")},
+		{requested: "", fallback: "relative-fallback", want: filepath.Join(workingDirectory, "relative-fallback")},
+		{requested: "", fallback: "", want: workingDirectory},
+	}
+	for _, tc := range cases {
+		client := NewClient(WithDirectory(tc.fallback))
+		got, err := client.resolveDirectory(tc.requested)
+		if err != nil {
+			t.Fatalf("resolveDirectory(%q) error = %v", tc.requested, err)
+		}
+		if got != tc.want {
+			t.Fatalf("resolveDirectory(%q, %q) = %q, want %q", tc.requested, tc.fallback, got, tc.want)
+		}
+		if !filepath.IsAbs(got) {
+			t.Fatalf("resolveDirectory(%q) = %q, want an absolute path", tc.requested, got)
+		}
 	}
 }

@@ -172,7 +172,7 @@ platforms:
 
 # AI 代理配置
 agent:
-  driver: claude # 支持: opencode, codex, claude
+  driver: claude # 支持: opencode, opencode2, codex, claude, pi, acp
   claude:
     command: "claude"
     args:
@@ -308,7 +308,7 @@ agent:
 
 #### 4.2.3 OpenCode
 
-使用 OpenCode 作为 AI 代理（默认驱动）。
+使用 OpenCode 1.x 作为 AI 代理（默认驱动）。
 
 ```yaml
 agent:
@@ -318,6 +318,86 @@ agent:
     timeout: 10m
     db_path: "/root/.local/share/opencode/opencode.db"
 ```
+
+#### 4.2.4 OpenCode 2.x
+
+OpenCode 2 把 1.x 的 HTTP 接口换成了 `/api` 下的新接口，因此单独提供一个驱动。
+服务启动时会打印密码，也可以自己指定：
+
+```bash
+OPENCODE_SERVER_PASSWORD=changeit opencode serve --port 4096
+```
+
+```yaml
+agent:
+  driver: opencode2
+  opencode2:
+    base_url: "http://127.0.0.1:4096"
+    username: "opencode" # OpenCode 2 要求固定使用这个用户名
+    password: "changeit"
+    timeout: 30m
+    poll_interval: 1s
+```
+
+**说明**：
+
+- 模型、代理、权限、提问都映射到 2.x 的 HttpApi
+- 提问接口只表示已受理，驱动随后等待会话空闲、且日志越过提问前的位置才算完成
+- 会话路由按工作目录划分，驱动会从会话数据里记住目录并复用
+- `/session list --global` 只能覆盖桥见过的目录，因为接口没有跨项目会话列表
+
+#### 4.2.5 pi
+
+通过 pi 的 RPC 模式驱动 pi 编程代理。
+
+```yaml
+agent:
+  driver: pi
+  pi:
+    command: "pi"
+    args: ["--mode", "rpc"]
+    env: {}
+    timeout: 30m
+```
+
+**说明**：
+
+- 模型与 provider 使用 pi 自己的模型目录
+- 扩展对话框（select、confirm、input、editor）会转成 `/question`；pi 没有逐工具的
+  权限确认，所以 `/permission` 不会列出内容
+- 取消提问时向 pi 发送 `abort`
+
+#### 4.2.6 任意 ACP 代理
+
+`agent.driver: acp` 通过子进程说 [Agent Client Protocol](https://agentclientprotocol.com)，
+所以任何 ACP 代理都无需专门驱动。DeepSeek Harness（dsh）就是其中之一：
+
+```yaml
+agent:
+  driver: acp
+  acp:
+    command: "dsh"
+    args: ["--profile", "acp"]
+    timeout: 30m
+    initialize_timeout: 30s
+```
+
+OpenCode 2 和其他 ACP 代理只需换 `command` 和 `args`：
+
+```yaml
+agent:
+  driver: acp
+  acp:
+    command: "opencode"
+    args: ["acp"]
+```
+
+**说明**：
+
+- 模型来自代理在会话配置项里公布的内容，驱动会为每个目录临时开一个会话来读取
+- `/permission` 映射到 ACP 权限请求，`once`/`always`/`reject` 会选择代理提供的对应选项
+- ACP 上没有 `/question`；代理的提问会以权限请求的形式出现
+- 代理支持 `session/list` 时会用它列出会话
 
 ### 4.3 消息输出配置
 
@@ -427,10 +507,12 @@ Agent Bridge 支持以下斜杠命令：
 
 ### 6.2 AI 代理支持
 
-- [x] OpenCode（默认）
+- [x] OpenCode 1.x（默认）
+- [x] OpenCode 2.x
 - [x] Claude Code
 - [x] Codex
-- [ ] 其他 ACP 兼容代理（计划中）
+- [x] pi
+- [x] 任意 ACP 代理（含 DeepSeek Harness）
 
 ### 6.3 其他功能
 
