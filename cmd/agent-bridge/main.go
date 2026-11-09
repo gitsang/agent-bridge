@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/gitsang/agent-bridge/internal/agent"
+	_ "github.com/gitsang/agent-bridge/internal/agent/acp"
 	_ "github.com/gitsang/agent-bridge/internal/agent/claude"
 	_ "github.com/gitsang/agent-bridge/internal/agent/codex"
 	_ "github.com/gitsang/agent-bridge/internal/agent/opencode"
@@ -214,6 +215,15 @@ func buildAgentClient(c Config, logger *slog.Logger) (bridge.Agent, error) {
 			"env":                c.Agent.Codex.Env,
 			"timeout":            c.Agent.Codex.Timeout.String(),
 			"initialize_timeout": c.Agent.Codex.InitializeTimeout.String(),
+		}
+	case "acp", "acp-agent":
+		configRaw = map[string]any{
+			"command":            c.Agent.ACP.Command,
+			"args":               c.Agent.ACP.Args,
+			"env":                c.Agent.ACP.Env,
+			"directory":          c.Agent.ACP.Directory,
+			"timeout":            c.Agent.ACP.Timeout.String(),
+			"initialize_timeout": c.Agent.ACP.InitializeTimeout.String(),
 		}
 	case "claude", "claude-code":
 		configRaw = map[string]any{

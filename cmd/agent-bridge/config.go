@@ -14,7 +14,7 @@ type Config struct {
 		Providers map[string][]LogConfig `mapstructure:"providers"`
 	} `mapstructure:"log"`
 	Platforms map[string]any `mapstructure:"platforms"`
-	Agent   struct {
+	Agent     struct {
 		Driver        string                     `default:"opencode" usage:"agent driver" mapstructure:"driver"`
 		MessageOutput types.MessageOutputOptions `default:"{}" usage:"agent message output options" mapstructure:"message_output"`
 		Opencode      struct {
@@ -31,6 +31,14 @@ type Config struct {
 			Timeout           time.Duration     `default:"30m" usage:"codex turn timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
 			InitializeTimeout time.Duration     `default:"15s" usage:"codex app-server initialize timeout" mapstructure:"initialize_timeout"`
 		} `mapstructure:"codex"`
+		ACP struct {
+			Command           string            `default:"" usage:"acp agent command" mapstructure:"command"`
+			Args              []string          `default:"[]" usage:"acp agent command args" mapstructure:"args"`
+			Env               map[string]string `usage:"acp agent extra environment" mapstructure:"env"`
+			Directory         string            `usage:"acp agent working directory" mapstructure:"directory"`
+			Timeout           time.Duration     `default:"30m" usage:"acp prompt timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
+			InitializeTimeout time.Duration     `default:"30s" usage:"acp initialize timeout" mapstructure:"initialize_timeout"`
+		} `mapstructure:"acp"`
 		Claude struct {
 			Command string            `default:"claude" usage:"claude code command" mapstructure:"command"`
 			Args    []string          `default:"[--bare,-p,--output-format,stream-json,--verbose]" usage:"claude code command args before prompt" mapstructure:"args"`
