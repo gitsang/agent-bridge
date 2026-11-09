@@ -38,6 +38,14 @@ type Config struct {
 			Timeout      time.Duration `default:"30m" usage:"opencode 2.x prompt timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
 			PollInterval time.Duration `default:"1s" usage:"opencode 2.x session poll interval" mapstructure:"poll_interval"`
 		} `mapstructure:"opencode2"`
+		Pi struct {
+			Command    string            `default:"pi" usage:"pi command" mapstructure:"command"`
+			Args       []string          `default:"[--mode,rpc]" usage:"pi rpc command args" mapstructure:"args"`
+			Env        map[string]string `usage:"pi extra environment" mapstructure:"env"`
+			Directory  string            `usage:"pi working directory" mapstructure:"directory"`
+			SessionDir string            `usage:"pi session directory" mapstructure:"session_dir"`
+			Timeout    time.Duration     `default:"30m" usage:"pi prompt timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
+		} `mapstructure:"pi"`
 		ACP struct {
 			Command           string            `default:"" usage:"acp agent command" mapstructure:"command"`
 			Args              []string          `default:"[]" usage:"acp agent command args" mapstructure:"args"`
