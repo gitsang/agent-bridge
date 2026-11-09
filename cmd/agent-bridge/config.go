@@ -31,6 +31,13 @@ type Config struct {
 			Timeout           time.Duration     `default:"30m" usage:"codex turn timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
 			InitializeTimeout time.Duration     `default:"15s" usage:"codex app-server initialize timeout" mapstructure:"initialize_timeout"`
 		} `mapstructure:"codex"`
+		Opencode2 struct {
+			BaseURL      string        `default:"http://127.0.0.1:4096" usage:"opencode 2.x server base URL" mapstructure:"base_url"`
+			Username     string        `default:"opencode" usage:"opencode 2.x server username" mapstructure:"username"`
+			Password     string        `usage:"opencode 2.x server password" mapstructure:"password"`
+			Timeout      time.Duration `default:"30m" usage:"opencode 2.x prompt timeout, default 30m, 0 means no timeout" mapstructure:"timeout"`
+			PollInterval time.Duration `default:"1s" usage:"opencode 2.x session poll interval" mapstructure:"poll_interval"`
+		} `mapstructure:"opencode2"`
 		ACP struct {
 			Command           string            `default:"" usage:"acp agent command" mapstructure:"command"`
 			Args              []string          `default:"[]" usage:"acp agent command args" mapstructure:"args"`

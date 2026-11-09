@@ -15,6 +15,7 @@ import (
 	_ "github.com/gitsang/agent-bridge/internal/agent/claude"
 	_ "github.com/gitsang/agent-bridge/internal/agent/codex"
 	_ "github.com/gitsang/agent-bridge/internal/agent/opencode"
+	_ "github.com/gitsang/agent-bridge/internal/agent/opencode2"
 	"github.com/gitsang/agent-bridge/internal/bridge"
 	"github.com/gitsang/agent-bridge/internal/conversation"
 	"github.com/gitsang/agent-bridge/internal/platform"
@@ -215,6 +216,14 @@ func buildAgentClient(c Config, logger *slog.Logger) (bridge.Agent, error) {
 			"env":                c.Agent.Codex.Env,
 			"timeout":            c.Agent.Codex.Timeout.String(),
 			"initialize_timeout": c.Agent.Codex.InitializeTimeout.String(),
+		}
+	case "opencode2", "opencode-2":
+		configRaw = map[string]any{
+			"base_url":      c.Agent.Opencode2.BaseURL,
+			"username":      c.Agent.Opencode2.Username,
+			"password":      c.Agent.Opencode2.Password,
+			"timeout":       c.Agent.Opencode2.Timeout.String(),
+			"poll_interval": c.Agent.Opencode2.PollInterval.String(),
 		}
 	case "acp", "acp-agent":
 		configRaw = map[string]any{

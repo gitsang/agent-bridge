@@ -23,8 +23,8 @@ type Registration struct {
 }
 
 var (
-	registrationMu    sync.RWMutex
-	agentFactoryMap   = map[string]Registration{}
+	registrationMu  sync.RWMutex
+	agentFactoryMap = map[string]Registration{}
 )
 
 // Register adds an agent driver factory to the global registry
